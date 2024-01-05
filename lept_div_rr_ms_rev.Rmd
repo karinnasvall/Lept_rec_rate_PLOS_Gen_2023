@@ -275,9 +275,9 @@ rec_rate_anc %>%
 rec_rate_anc_bin$begin <- rec_rate_anc_bin$begin + 1
 
 #outlier
-rec_rate_anc_bin[rec_rate_anc_bin$rr_wind >= 40,]
-#one window chr 3 swedish, pos start 6Mb, 
-
+rec_rate_anc_bin[rec_rate_anc_bin$rr_wind >= 15,]
+#two windows: chr 3 swedish, pos start 6Mb, 68.77882
+#chr 48  cat 28.31142 pos 1 2000000     
 
 write.table(rec_rate_anc_bin, file = "documentation/tables/rec_rate_anc_bin.table")
 
@@ -315,7 +315,7 @@ expected_rec100 <-  function(length_chr){
 #####
 #Mean and sd for 2Mb windows
 
-anc_df_2Mb_wind %>%
+rec_rate_anc_bin %>%
   dplyr::distinct(pop, MB2_bin, rr_wind) %>%
   group_by(pop) %>%
   dplyr::summarize(mean(rr_wind, na.rm = T), sd(rr_wind, na.rm = T)) %>%
@@ -323,33 +323,30 @@ anc_df_2Mb_wind %>%
 
 #median and range
 
-anc_df_2Mb_wind %>%
+rec_rate_anc_bin %>%
   dplyr::distinct(pop, MB2_bin, rr_wind) %>%
   group_by(pop) %>%
   dplyr::summarize(median(rr_wind, na.rm = T), range(rr_wind, na.rm = T)) %>%
   write.table(file = "documentation/tables/summary_genome_wide.table", append = T)
 
 
-anc_df_2Mb_wind_pop <- 
-anc_df_2Mb_wind %>%
-  dplyr::distinct(pop, type, MB2_bin, rr_wind)
-
 capture.output(  
-wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE", "rr_wind"]), file = "documentation/tables/summary_genome_wide.table", append = T)
+wilcox.test(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSPA", "rr_wind"], rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE", "rr_wind"]), file = "documentation/tables/summary_genome_wide.table", append = T)
 
-
-
+wilcox.test(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSPA", "rr_wind"], rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE" & rec_rate_anc_bin$rr_wind <=40, "rr_wind"])
+  
 #Z mean
-anc_df_2Mb_wind %>%
-  dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
+#using the chromosomal weighted mean
+rec_rate_anc_bin %>%
+  #dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
   filter(type %in% "Z") %>%
   group_by(pop) %>%
   dplyr::summarize(mean_Z=mean(rr_wind, na.rm = T), sd_Z=sd(rr_wind, na.rm = T)) %>%
   write.table(file = "documentation/tables/summary_genome_wide.table", append = T)
 
 #Autosomal mean
-anc_df_2Mb_wind %>%
-  dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
+rec_rate_anc_bin %>%
+  #dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
   filter(!type %in% "Z") %>%
   group_by(pop) %>%
   dplyr::summarize(mean_A=mean(rr_wind, na.rm = T), sd_A=sd(rr_wind, na.rm = T)) %>%
@@ -359,11 +356,13 @@ anc_df_2Mb_wind %>%
 #diff Z autosomes
 
 capture.output(  
-wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA" & anc_df_2Mb_wind_pop$type=="Z", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA" & !anc_df_2Mb_wind_pop$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
+wilcox.test(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSPA" & rec_rate_anc_bin$type=="Z", "rr_wind"], rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSPA" & !rec_rate_anc_bin$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
 
 
 capture.output(  
-wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE" & anc_df_2Mb_wind_pop$type=="Z", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE" & !anc_df_2Mb_wind_pop$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
+wilcox.test(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE" & rec_rate_anc_bin$type=="Z", "rr_wind"], rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE" & !rec_rate_anc_bin$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
+
+
 
 ```
 
@@ -563,19 +562,18 @@ ggsave(plot = marey_swe, "documentation/figures_ms_rev/marey_map_swe.png", heigh
 
 rec_rate_anc_bin <- read.table(file = "documentation/tables/rec_rate_anc_bin.table")
 
-anc_df_2Mb_wind$chr_nr <- sub("HiC_scaffold_", "", anc_df_2Mb_wind$chrom, )
-anc_df_2Mb_wind$chr_nr <- sub("_LSSPA", "", anc_df_2Mb_wind$chr_nr, )
-anc_df_2Mb_wind$chr_nr <- sub("_LSSWE", "", anc_df_2Mb_wind$chr_nr, )
-anc_df_2Mb_wind$chr_nr <- as.numeric(anc_df_2Mb_wind$chr_nr)
+rec_rate_anc_bin$chr_nr <- sub("HiC_scaffold_", "", rec_rate_anc_bin$chrom, )
+rec_rate_anc_bin$chr_nr <- sub("_LSSPA", "", rec_rate_anc_bin$chr_nr, )
+rec_rate_anc_bin$chr_nr <- sub("_LSSWE", "", rec_rate_anc_bin$chr_nr, )
+rec_rate_anc_bin$chr_nr <- as.numeric(rec_rate_anc_bin$chr_nr)
 
-pop.labs <- c("Catalan", "Swedish")
-names(pop.labs) <- c("ls_cat", "ls_swe")
+rec_rate_anc_bin$set <- "cat"
+rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE", "set"]="swe"
 
-
-rr_cat <- ggplot(anc_df_2Mb_wind[anc_df_2Mb_wind$set=="cat",], aes((begin + 1000000)/1000000, rr_wind)) +
+rr_cat <- ggplot(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSPA",], aes((begin + 1000000)/1000000, rr_wind)) +
   #geom_point(size = 0.4, colour = "grey") +
-  geom_line(data = anc_df_2Mb_wind[anc_df_2Mb_wind$set=="cat" & anc_df_2Mb_wind$chr_nr==51,], aes((begin + 1000000)/1000000, rr_wind)) +
-  geom_smooth(colour="black", se=F, span=0.5, size=0.4, method = "loess", ) +
+  #geom_line(size = 0.2, colour = "grey") +
+  geom_smooth(colour="black", se=F, span=0.8, size=0.4, method = "loess") +
   facet_wrap(~chr_nr, scales = "free", ncol = 8) +
   labs(title = "Recombination rate (Catalan)") +
   ylab("Recombination rate (cM/Mb)") +
@@ -584,11 +582,15 @@ rr_cat <- ggplot(anc_df_2Mb_wind[anc_df_2Mb_wind$set=="cat",], aes((begin + 1000
   theme(strip.background = element_rect(size = 0.4),
         axis.line = element_line(size=0.2))
 
-
-rr_swe <- ggplot(anc_df_2Mb_wind[anc_df_2Mb_wind$set=="swe",], aes((begin + 1000000)/1000000, rr_wind)) +
+ggplot(data = rec_rate_anc_bin[rec_rate_anc_bin$set=="cat" & rec_rate_anc_bin$chr_nr==51,], aes((begin + 1000000)/1000000, rr_wind)) +
+  #geom_point(size = 0.4, colour = "grey") +
+  geom_smooth(span=0.7, size=0.4, method = "loess")
+  
+  
+rr_swe <- ggplot(rec_rate_anc_bin[rec_rate_anc_bin$pop=="LSSWE",], aes((begin + 1000000)/1000000, rr_wind)) +
   #geom_point(size = 0.4, colour = "grey") +
   #geom_line(size = 0.2, colour = "grey") +
-  geom_smooth(colour="black", se=F, span=0.5, size=0.4, method = "loess") +
+  geom_smooth(colour="black", se=F, span=0.8, size=0.4, method = "loess") +
   facet_wrap(~chr_nr, scales = "free", ncol = 8) +
   labs(title = "Recombination rate (Swedish)") +
   ylab("Recombination rate (cM/Mb)") +
@@ -697,7 +699,8 @@ reg_lm_folded <-
         legend.text = element_text(size = TXT_SIZE),
         legend.title = element_text(size = TXT_SIZE),
         legend.key = element_blank(),
-        legend.position = c(0.8,0.75)) +
+        #legend.position = c(0.8,0.75)
+        ) +
   guides(colour=guide_legend(order=1, keywidth = 2),
          linetype=guide_legend(order=2, keywidth = 2.5, override.aes = list(colour="#3d3d3d", linetype=c("solid", "dashed"))))
 
@@ -780,17 +783,6 @@ ggplot(mean_pop_chr_rr, aes(chr_length_assembly/1000000,pop_mean_rr)) +
          linetype=guide_legend(order = 3, "Expected recombination rate", keywidth = 2.5,  override.aes=list(linetype="dashed", colour=c("black", line_colour),size=1 )))
 
 
-ggsave(plot=
-ggarrange(
-  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h", widths = c(1,1.2)), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), nrow = 2, heights = c(1,1.3), labels = c("", "c"), font.label = list(size=TXT_SIZE)) ,
-  "documentation/figures_ms/Fig_1_box_reg_corr.pdf", device = "pdf", height = 10, width = 10)
-
-ggsave(plot=
-ggarrange(
-  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h", widths = c(1,1.2)), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), nrow = 2, heights = c(1,1.3), labels = c("", "c"), font.label = list(size=TXT_SIZE)) ,
-  "documentation/figures_ms/Fig_1_box_reg_corr.png", device = "png", height = 10, width = 10)
-
-
 
 #excess maplength
 excess_map <- 
@@ -828,13 +820,14 @@ ggplot(aes(chr_length_assembly/1000000,map_length-50)) +
 ggsave("documentation/figures_ms/excess_map_length_supppl.pdf", height = 6, width = 10)
 ggsave("documentation/figures_ms/excess_map_length_supppl.png", height = 6, width = 10)
 
-ggsave(plot=
-  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm"), legend.position = "none"), excess_map  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), labels = c("a", "b", "c", "d", ""), font.label = list(size=TXT_SIZE), align = "hv", widths = c(1, 1.3, 1, 1.3)) ,
-  "documentation/figures_ms/Fig_1_alt2.pdf", height = 10, width = 14)
+fig1_rr <- ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,1.5,0.4,0.3, "cm")), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm"), legend.position = "none"), excess_map  + theme(plot.margin = margin(0.4,0,0.4,0.3, "cm")), labels = c("A", "B", "C", "D", ""), font.label = list(size=TXT_SIZE), align = "hv", widths = c(1, 1.3, 1, 1.3)) 
 
-ggsave(plot=
-  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm"), legend.position = "none"), excess_map  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), labels = c("a", "b", "c", "d", ""), font.label = list(size=TXT_SIZE), align = "hv", widths = c(1, 1.3, 1, 1.3)) ,
-  "documentation/figures_ms/Fig_1_alt2.png", height = 10, width = 14)
+ggsave(plot=fig1_rr,
+  "documentation/figures_ms_rev/Fig_1_alt2.pdf", height = 10, width = 14)
+ggsave(plot=fig1_rr ,
+  "documentation/figures_ms_rev/Fig_1_alt2.png", height = 10, width = 14)
+ggsave(plot=fig1_rr ,
+  "documentation/figures_ms_rev/Fig_1_alt2.eps", height = 10, width = 14)
 
 ```
 
@@ -912,12 +905,12 @@ swe_d.mat <- rec_rate[rec_rate$set=="ls_swe", c( "chr_nr", "mkr", "phys_assembly
 ```
 
 ```{r analysis_intrachr}
-#set variables
+#set variables, one of:
 chr.mat <- cat_d.mat
 chr.mat <- swe_d.mat
 chr.mat <- male_human_chr1[!is.na(male_human_chr1$gen),] #remove NAs
 
-#which data set
+#which data set, the corresponding one:
 chr_length.df <- chr_length_cat.df
 chr_length.df <- chr_length_swe.df
 chr_length.df <- human_chr_length
@@ -1221,7 +1214,7 @@ ggplot(inter_chr.df, aes(nr_chr, prob)) +
   scale_colour_manual(values = pop_colour, 
                       name="Population") +
   scale_linetype_manual(values = c("solid", "twodash"),
-                        name="Gender") +
+                        name="Sex") +
   theme(panel.background = element_blank(),
         axis.line = element_line(size = LINE_SIZE, colour="black"),
         text = element_text(size = TXT_SIZE, colour="black"),
@@ -1242,10 +1235,11 @@ ggsave(plot=reshuff_plot, "documentation/figures_ms/reshuff_plot.pdf", device = 
 ggsave(plot=reshuff_plot, "documentation/figures_ms/reshuff_plot.png", device = "png", height = 5, width = 15)
 
 reshuff_plot_2 <- 
-  ggarrange(inter_plot + theme(plot.margin = margin(0.2,2,0.2,0.3, "cm")), intra_reshuff_plot + theme(plot.margin = margin(0.2,5,0.2,1, "cm")), widths = c(1,1.2), ncol = 2, labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h")
+  ggarrange(inter_plot + theme(plot.margin = margin(0.2,2,0.2,0.3, "cm")), intra_reshuff_plot + theme(plot.margin = margin(0.2,5,0.2,1, "cm")), widths = c(1,1.2), ncol = 2, labels = c("A", "B"), font.label = list(size=TXT_SIZE), align = "h")
 
-ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.pdf", height = 5, width = 15)
-ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.png", height = 5, width = 15)
+ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.pdf", height = 5, width = 14)
+ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.png", height = 5, width = 14)
+ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.eps", height = 5, width = 14)
 
 ```
 
@@ -1796,11 +1790,11 @@ p4 <- pnps_rec_rate
 
 
 
-ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(face ="bold")),
-       filename = "documentation/figures_ms/pn_ps_vs_rec.pdf", device = "pdf", height = 6, width = 10)
+ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(face ="bold")),
+       filename = "documentation/figures_ms_rev/pn_ps_vs_rec.pdf", height = 8, width = 14)
 
-ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(face ="bold")),
-       filename = "documentation/figures_ms/pn_ps_vs_rec.png", device = "png", height = 6, width = 10)
+ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(face ="bold")),
+       filename = "documentation/figures_ms_rev/pn_ps_vs_rec.png", height = 8, width = 14)
 
 
 capture.output(file = "documentation/tables/pnps_vs_rec.txt",
@@ -2158,16 +2152,16 @@ col_type <- c(adjustcolor("#526A83",offset = c(0.15,0.15, 0.15, 0)),
 
 
 
-#ratio_intergenic <-            
+ratio_intergenic <-            
 anc_df_distinct %>%
   dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
   dplyr::filter(class=="intergenic") %>%
 ggplot(aes(ratio_rr, ratio_pi)) +
   geom_point(aes(fill=type),shape=21, size=5, alpha=0.8) +
   geom_text(data=data.frame(cbind(rsquare=lmod2_intergenic$rsquare, permp=lmod2_intergenic$regression.results$`P-perm (1-tailed)`[1])),
-            aes(x=1.5, y=c(1.4), label = paste0("R\U00B2 = ", round(rsquare, 2), ", p-value = ", round(permp, 4))), size=TXT_SIZE/2.8, show.legend = FALSE) +
+            aes(x=1.5, y=c(1.37), label = paste0("R\U00B2 = ", round(rsquare, 2), ", p-value = ", round(permp, 4))), size=TXT_SIZE/2.8, show.legend = FALSE, ) +
   #stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm= 1000, small.p = T, size=TXT_SIZE/2.8) +
-  stat_ma_eq(use_label("eq"), method = "OLS", nperm= 1000, size=TXT_SIZE/2.8, label.x=0.5) +
+  stat_ma_eq(use_label("eq"), method = "OLS", nperm= 1000, size=TXT_SIZE/2.8, label.x=0.22) +
   stat_ma_line(size = PLOT_LINE, method = "OLS", linetype="solid", se=F, col="black" ) +
   scale_fill_manual(values = col_type,
                     name = "Rearrangement type",
@@ -2229,7 +2223,7 @@ col_type_all <- c("#526A83",
               adjustcolor("#7C7C7C", offset = c(0.1, 0.1, 0.1, 0)),
               "#855C75")
 
-type_anc_col <- left_join(chain_anc, data.frame(type.x=unique(chain_anc$type.x), col_anc_vector))
+type_anc_col <- read.table(file = "documentation/tables/colour_vector_anc_units", header = T, comment.char = "")
 
 
 circ_legend <- 
@@ -2249,19 +2243,12 @@ type_anc_col %>%
 
 
 ggsave(plot=ggarrange(circ_legend, 
-                      ggarrange(anc_units_diff_intergenic, ratio_intergenic, ncol=2, labels = c("b", "c"), align = "h", widths = c(1,1.5)), 
+                      ggarrange(anc_units_diff_intergenic, ratio_intergenic, ncol=2, labels = c("B", "C"), align = "h", widths = c(1,1.5)), 
                       nrow = 2,
                       heights = c(1.8,1)),
-       filename = "documentation/figures_ms/diff_anc_circ_intergenic_221206.pdf",
-       height = 12, width = 12)
+       filename = "documentation/figures_ms_rev/diff_anc_circ_intergenic.pdf",
+       height = 14, width = 14)
 
-
-ggsave(plot=ggarrange(circ_legend, 
-                      ggarrange(ratio_intergenic, anc_units_diff_intergenic + theme(plot.margin = unit(c(0.5, 20, 0.5, 30), "pt")), ncol=2, labels = c("b", "c"), align = "h", widths = c(1,1.5)), 
-                      nrow = 2,
-                      heights = c(0.3,1)),
-       filename = "documentation/figures_ms/diff_anc_circ_intergenic_221206.pdf",
-       height = 6, width = 14)
 
 
 ```
