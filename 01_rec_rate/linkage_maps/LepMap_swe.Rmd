@@ -1,0 +1,792 @@
+---
+title: "Swedish_marey_maps"
+author: "KN"
+date: "16 dec 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo=FALSE, include=FALSE}
+library(ggplot2)
+library(viridis)
+library("tidyr")
+library(dplyr)
+
+
+```
+
+## Swedish maps
+#LepMap 
+ParentCall with default settings + zlimit=2
+Filtering2 with dataTolerance=0.00001, InformativeFamilyLimit=4, MAF=0.05, missingLimit=0.5
+
+#SepChr
+Check assignment of markers to lg with different LodLimit
+```{bash check_sep_chrom_prep, eval=F}
+#check that only correct maps summary lines are included, and remove excessive lines
+awk 'NR<40 {print $0}' LM_swe_4fam/swe_4fam_sepchr_lod.txt > LM_swe_4fam/swe_4fam_sepchr_lod_mod.txt
+#and make a csv of it to remove risk of empty values being shifted
+```
+
+
+```{r check_sep_chrom, eval=F}
+maps_sum <- read.csv("LM_swe_4fam/swe_4fam_sepchr_lod_mod.txt", sep = "\t", header = T, fill=T)
+str(maps_sum)
+maps_sum_long <- gather(maps_sum, -LG, key = "lod_lim", value = nr_markers)
+str(maps_sum_long)
+maps_sum_long[is.na(maps_sum_long)] = 0
+maps_sum_long$lod_lim <- gsub(pattern = "lodLimit.", replacement = "", x = maps_sum_long$lod_lim)
+
+ggplot(maps_sum_long) +
+  geom_line(aes(LG, nr_markers, colour=lod_lim)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_x_continuous(expand = c(0,0)) +
+  coord_cartesian(xlim = c(0,40), ylim = c(0,200)) +
+  xlab(label = "Number of linkage groups") +
+  ylab(label = "Number of markers") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 0.2, colour="grey"),
+        axis.ticks = element_line(size = 0.2, colour="grey"),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+  
+ggplot(maps_sum_long) +
+  geom_tile(aes(as.numeric(lod_lim), LG, fill=nr_markers)) +
+  geom_hline(yintercept = 23) +
+  #geom_line(aes(LG, nr_markers, colour=lod_lim)) +
+  #geom_bar(aes(maps_sum_long$LG, maps_sum_long$nr_markers, fill=lod_lim), stat = "identity", position = "dodge") +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_x_discrete(expand = c(0,0)) +
+  coord_cartesian(ylim = c(0,40)) +
+  scale_fill_distiller(type = "seq", na.value = "black", palette = "Greys", direction = 1, limits=c(0,200)) +
+  xlab(label = "LodLimit") +
+  ylab(label = "Number of linkage groups") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 90),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+  
+
+```
+
+
+#OrderMarker 
+
+
+```{r swe_order1_phys_mask1_4fam, echo=FALSE}
+#THIS MUST BE CHANGED!!
+plot_title="swe_order1_phys_mask1_4fam"
+
+#THIS MUST BE CHANGED!!
+map_ordered <- read.table("LM_swe_4fam/swe_phys_mask1_4fam_order_all.table", header=T)
+str(map_ordered)
+head(map_ordered)
+
+paste("Result for:", plot_title)
+
+#Number of markers in map
+paste("Number of markers in LG:", length(map_ordered$position))
+apply(map_ordered[c("lg")], 2, table)
+apply(map_ordered[c("scaffold")], 2, table)
+
+#maplength
+print("Map length per LG min and max")
+#cbind(aggregate(map_ordered$distance_min, list(map_ordered$lg), max), aggregate(map_ordered$distance_max, list(map_ordered$lg), max))
+aggregate(map_ordered$male_position, list(map_ordered$lg), max)
+paste("Total map length (cM): ",sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x))
+
+paste("Appr recombination rate (cM/Mb):", sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x)/sum(aggregate(map_ordered$position, list(map_ordered$scaffold), max)$x)*1000000)
+
+
+map_ordered$scaffold <- as.factor(map_ordered$scaffold)
+map_ordered$lg <- as.factor(map_ordered$lg)
+
+#plot(map_ordered$lg)
+
+ggplot(map_ordered, aes(map_ordered$scaffold, fill=map_ordered$lg)) +
+  geom_bar() +
+  guides(fill=FALSE) +
+  labs(title = plot_title) +
+  xlab("HiC-scaffold") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+
+
+#in one plot
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#free axis
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg, scales = "free") +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in one plot by scaffold
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$lg)) +
+  geom_point() +
+  facet_wrap(~map_ordered$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+
+#filtering
+#add the most common scaffold per lg
+lg_to_sc <- as.data.frame(aggregate(scaffold~lg, FUN=Mode, data=map_ordered))
+colnames(lg_to_sc) <- c("lg", "scaffold_mode")
+#add to df
+map_rearr <- left_join(map_ordered, lg_to_sc)
+map_rearr$V7 <- 1
+#mark the markers where linkage group and scaffold are not the same
+map_rearr[map_rearr$scaffold != map_rearr$scaffold_mode, "V7"] = 0
+
+map_rearr$V7 <- as.factor(map_rearr$V7)
+
+#in one plot by scaffold
+ggplot(map_rearr[map_rearr$V7==1,], aes(position, male_position, colour=map_rearr[map_rearr$V7==1,]$lg)) +
+  geom_point() +
+  facet_wrap(~map_rearr[map_rearr$V7==1,]$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#write table to use as map (only first column will be used)
+#write.table(file = "map_rearr_fam4.map", map_rearr[map_rearr$V7==1,], row.names = F)
+
+```
+
+
+```{r swe_order1_phys_mask1_4fam_0.01, echo=FALSE}
+#THIS MUST BE CHANGED!!
+plot_title="swe_order1_phys_mask1_4fam_0.01"
+
+#THIS MUST BE CHANGED!!
+map_ordered <- read.table("LM_swe_4fam/order_all_err0.01.table", header=T)
+str(map_ordered)
+head(map_ordered)
+
+# map_ordered <- map_ordered %>%
+#   arrange(lg) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+#   mutate(lg)  # This trick update the factor levels
+
+
+
+head(map_ordered)
+
+
+paste("Result for:", plot_title)
+
+#No markers per scaffold and lg
+#apply(df[c("Q1", "Q2")], 2, table)
+
+#Number of markers in map
+paste("Number of markers in LG:", length(map_ordered$position))
+apply(map_ordered[c("lg")], 2, table)
+apply(map_ordered[c("scaffold")], 2, table)
+
+#maplength
+print("Map length per LG min and max")
+#cbind(aggregate(map_ordered$distance_min, list(map_ordered$lg), max), aggregate(map_ordered$distance_max, list(map_ordered$lg), max))
+aggregate(map_ordered$male_position, list(map_ordered$lg), max)
+paste("Total map length (cM): ",sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x))
+
+paste("Appr recombination rate (cM/Mb):", sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x)/sum(aggregate(map_ordered$position, list(map_ordered$scaffold), max)$x)*1000000)
+
+#total length to get cM divide by nr of offspring then *100
+# paste("Total map length (cM), min:",
+# 100*sum(aggregate(map_ordered$distance_min, list(map_ordered$lg), max)[,2])/90)
+# paste("Total map length (cM), max:",
+# 100*sum(aggregate(map_ordered$distance_max, list(map_ordered$lg), max)[,2])/90)
+
+
+map_ordered$scaffold <- as.factor(map_ordered$scaffold)
+map_ordered$lg <- as.factor(map_ordered$lg)
+
+#plot(map_ordered$lg)
+
+ggplot(map_ordered, aes(map_ordered$scaffold, fill=map_ordered$lg)) +
+  geom_bar() +
+  guides(fill=FALSE) +
+  labs(title = plot_title) +
+  xlab("HiC-scaffold") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+
+# ggplot(map_ordered, aes(map_ordered$lg, fill=map_ordered$scaffold)) +
+#   geom_bar() +
+#   scale_fill_discrete(guide_legend(title="Scaffold")) +
+#   labs(title = plot_title) +
+#   xlab("Linkage group by LepMap3") +
+#   theme(panel.background = element_blank(),
+#         axis.line = element_line(size = 1),
+#         axis.text = element_text(size = 10),
+#         axis.title.x = element_text(size = 10),
+#         axis.title.y = element_text(size = 10),
+#         legend.text = element_text(size = 10))
+# 
+
+
+
+#in one plot
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#free axis
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg, scales = "free") +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in one plot by scaffold
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$lg)) +
+  geom_point() +
+  facet_wrap(~map_ordered$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in maporder
+# ggplot(map_ordered, aes(as.numeric(rownames(map_ordered)), map_ordered$male_position)) +
+#   geom_point(aes(colour=map_ordered$scaffold)) +
+#   facet_wrap(~map_ordered$lg, scales = "free") +
+#   guides(colour=FALSE) +
+#   labs(title = plot_title) +
+#   xlab("Map order (row number)") +
+#   ylab("Distance (cM)") +
+#   theme_classic()
+
+#separate fig for all
+# lgs=unique(map_ordered$lg)
+# for (i in lgs){
+# 
+# marey_title=paste(plot_title,"LG",i)
+# print(ggplot(map_ordered[map_ordered$lg== i, ], aes(map_ordered[map_ordered$lg==i, ]$position, map_ordered[map_ordered$lg==i, ]$distance_min, colour=map_ordered[map_ordered$lg==i, ]$scaffold)) +
+#   geom_point() +
+#   #facet_wrap(~map_lg1$lg) +
+#   scale_colour_discrete(guide_legend(title="Scaffold")) +
+#   xlab("Position (bp)") +
+#   ylab("Distance (cM)") +
+#   theme(panel.background = element_blank(),
+#         axis.line = element_line(size = 1),
+#         axis.text = element_text(size = 10),
+#         axis.title.x = element_text(size = 10),
+#         axis.title.y = element_text(size = 10),
+#         legend.text = element_text(size = 10)) +
+#   labs(title = marey_title))
+# }
+
+
+#filtering
+#add the most common scaffold per lg
+lg_to_sc <- as.data.frame(aggregate(scaffold~lg, FUN=Mode, data=map_ordered))
+colnames(lg_to_sc) <- c("lg", "scaffold_mode")
+#add to df
+map_rearr <- left_join(map_ordered, lg_to_sc)
+map_rearr$V7 <- 1
+map_rearr[map_rearr$scaffold != map_rearr$scaffold_mode, "V7"] = 0
+
+map_rearr$V7 <- as.factor(map_rearr$V7)
+
+#in one plot by scaffold
+ggplot(map_rearr[map_rearr$V7==1,], aes(position, male_position, colour=map_rearr[map_rearr$V7==1,]$lg)) +
+  geom_point() +
+  facet_wrap(~map_rearr[map_rearr$V7==1,]$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#write.table(file = "map_rearr_fam4.map", map_rearr[map_rearr$V7==1,], row.names = F)
+
+```
+
+```{r swe_order1_phys_mask1_4fam_0.05, echo=FALSE}
+#THIS MUST BE CHANGED!!
+plot_title="swe_order1_phys_mask1_4fam_0.05"
+
+#THIS MUST BE CHANGED!!
+map_ordered <- read.table("LM_swe_4fam/order_all_err0.05.table", header=T)
+str(map_ordered)
+head(map_ordered)
+
+# map_ordered <- map_ordered %>%
+#   arrange(lg) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+#   mutate(lg)  # This trick update the factor levels
+
+
+
+head(map_ordered)
+
+
+paste("Result for:", plot_title)
+
+#No markers per scaffold and lg
+#apply(df[c("Q1", "Q2")], 2, table)
+
+#Number of markers in map
+paste("Number of markers in LG:", length(map_ordered$position))
+apply(map_ordered[c("lg")], 2, table)
+apply(map_ordered[c("scaffold")], 2, table)
+
+#maplength
+print("Map length per LG min and max")
+#cbind(aggregate(map_ordered$distance_min, list(map_ordered$lg), max), aggregate(map_ordered$distance_max, list(map_ordered$lg), max))
+aggregate(map_ordered$male_position, list(map_ordered$lg), max)
+paste("Total map length (cM): ",sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x))
+
+paste("Appr recombination rate (cM/Mb):", sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x)/sum(aggregate(map_ordered$position, list(map_ordered$scaffold), max)$x)*1000000)
+
+#total length to get cM divide by nr of offspring then *100
+# paste("Total map length (cM), min:",
+# 100*sum(aggregate(map_ordered$distance_min, list(map_ordered$lg), max)[,2])/90)
+# paste("Total map length (cM), max:",
+# 100*sum(aggregate(map_ordered$distance_max, list(map_ordered$lg), max)[,2])/90)
+
+
+map_ordered$scaffold <- as.factor(map_ordered$scaffold)
+map_ordered$lg <- as.factor(map_ordered$lg)
+
+#plot(map_ordered$lg)
+
+ggplot(map_ordered, aes(map_ordered$scaffold, fill=map_ordered$lg)) +
+  geom_bar() +
+  guides(fill=FALSE) +
+  labs(title = plot_title) +
+  xlab("HiC-scaffold") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+
+# ggplot(map_ordered, aes(map_ordered$lg, fill=map_ordered$scaffold)) +
+#   geom_bar() +
+#   scale_fill_discrete(guide_legend(title="Scaffold")) +
+#   labs(title = plot_title) +
+#   xlab("Linkage group by LepMap3") +
+#   theme(panel.background = element_blank(),
+#         axis.line = element_line(size = 1),
+#         axis.text = element_text(size = 10),
+#         axis.title.x = element_text(size = 10),
+#         axis.title.y = element_text(size = 10),
+#         legend.text = element_text(size = 10))
+# 
+
+
+
+#in one plot
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#free axis
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg, scales = "free") +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in one plot by scaffold
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$lg)) +
+  geom_point() +
+  facet_wrap(~map_ordered$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in maporder
+# ggplot(map_ordered, aes(as.numeric(rownames(map_ordered)), map_ordered$male_position)) +
+#   geom_point(aes(colour=map_ordered$scaffold)) +
+#   facet_wrap(~map_ordered$lg, scales = "free") +
+#   guides(colour=FALSE) +
+#   labs(title = plot_title) +
+#   xlab("Map order (row number)") +
+#   ylab("Distance (cM)") +
+#   theme_classic()
+
+#separate fig for all
+# lgs=unique(map_ordered$lg)
+# for (i in lgs){
+# 
+# marey_title=paste(plot_title,"LG",i)
+# print(ggplot(map_ordered[map_ordered$lg== i, ], aes(map_ordered[map_ordered$lg==i, ]$position, map_ordered[map_ordered$lg==i, ]$distance_min, colour=map_ordered[map_ordered$lg==i, ]$scaffold)) +
+#   geom_point() +
+#   #facet_wrap(~map_lg1$lg) +
+#   scale_colour_discrete(guide_legend(title="Scaffold")) +
+#   xlab("Position (bp)") +
+#   ylab("Distance (cM)") +
+#   theme(panel.background = element_blank(),
+#         axis.line = element_line(size = 1),
+#         axis.text = element_text(size = 10),
+#         axis.title.x = element_text(size = 10),
+#         axis.title.y = element_text(size = 10),
+#         legend.text = element_text(size = 10)) +
+#   labs(title = marey_title))
+# }
+
+
+#filtering
+#add the most common scaffold per lg
+lg_to_sc <- as.data.frame(aggregate(scaffold~lg, FUN=Mode, data=map_ordered))
+colnames(lg_to_sc) <- c("lg", "scaffold_mode")
+#add to df
+map_rearr <- left_join(map_ordered, lg_to_sc)
+map_rearr$V7 <- 1
+map_rearr[map_rearr$scaffold != map_rearr$scaffold_mode, "V7"] = 0
+
+map_rearr$V7 <- as.factor(map_rearr$V7)
+
+#in one plot by scaffold
+ggplot(map_rearr[map_rearr$V7==1,], aes(position, male_position, colour=map_rearr[map_rearr$V7==1,]$lg)) +
+  geom_point() +
+  facet_wrap(~map_rearr[map_rearr$V7==1,]$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#write.table(file = "map_rearr_fam4.map", map_rearr[map_rearr$V7==1,], row.names = F)
+
+```
+
+```{r swe_order1_phys_mask1_4fam_0.1, echo=FALSE}
+#THIS MUST BE CHANGED!!
+plot_title="swe_order1_phys_mask1_4fam_0.1"
+
+#THIS MUST BE CHANGED!!
+map_ordered <- read.table("LM_swe_4fam/order_all_err0.1.table", header=T)
+str(map_ordered)
+head(map_ordered)
+
+# map_ordered <- map_ordered %>%
+#   arrange(lg) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+#   mutate(lg)  # This trick update the factor levels
+
+
+
+head(map_ordered)
+
+
+paste("Result for:", plot_title)
+
+#No markers per scaffold and lg
+#apply(df[c("Q1", "Q2")], 2, table)
+
+#Number of markers in map
+paste("Number of markers in LG:", length(map_ordered$position))
+apply(map_ordered[c("lg")], 2, table)
+apply(map_ordered[c("scaffold")], 2, table)
+
+#maplength
+print("Map length per LG min and max")
+#cbind(aggregate(map_ordered$distance_min, list(map_ordered$lg), max), aggregate(map_ordered$distance_max, list(map_ordered$lg), max))
+aggregate(map_ordered$male_position, list(map_ordered$lg), max)
+paste("Total map length (cM): ",sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x))
+
+paste("Appr recombination rate (cM/Mb):", sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x)/sum(aggregate(map_ordered$position, list(map_ordered$scaffold), max)$x)*1000000)
+
+map_ordered$scaffold <- as.factor(map_ordered$scaffold)
+map_ordered$lg <- as.factor(map_ordered$lg)
+
+#plot(map_ordered$lg)
+
+ggplot(map_ordered, aes(map_ordered$scaffold, fill=map_ordered$lg)) +
+  geom_bar() +
+  guides(fill=FALSE) +
+  labs(title = plot_title) +
+  xlab("HiC-scaffold") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+
+
+
+#in one plot
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#free axis
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg, scales = "free") +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in one plot by scaffold
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$lg)) +
+  geom_point() +
+  facet_wrap(~map_ordered$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+
+Mode <- function(x, na.rm = FALSE) {
+  if(na.rm){
+    x = x[!is.na(x)]
+  }
+
+  ux <- unique(x)
+  return(ux[which.max(tabulate(match(x, ux)))])
+}
+
+#filtering
+#add the most common scaffold per lg
+lg_to_sc <- as.data.frame(aggregate(scaffold~lg, FUN=Mode, data=map_ordered))
+colnames(lg_to_sc) <- c("lg", "scaffold_mode")
+#add to df
+map_rearr <- left_join(map_ordered, lg_to_sc)
+map_rearr$V7 <- 1
+map_rearr[map_rearr$scaffold != map_rearr$scaffold_mode, "V7"] = 0
+
+map_rearr$V7 <- as.factor(map_rearr$V7)
+
+
+#in one plot by scaffold
+ggplot(map_rearr[map_rearr$V7==1,], aes(position, male_position, colour=map_rearr[map_rearr$V7==1,]$lg)) +
+  geom_point() +
+  facet_wrap(~map_rearr[map_rearr$V7==1,]$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+
+#thin map (remove markers within each radtag (300bp))
+#dat[c(T, diff(dat$x.count)>0), ]
+map_rearr$sc_nr <- as.numeric(map_rearr$scaffold_mode)
+
+map_thin <- map_rearr[(diff(map_rearr$sc_nr)!=0 | diff(map_rearr$position) > 300),]
+
+ggplot(map_thin, aes(position, male_position, colour=map_thin$lg)) +
+  geom_point() +
+  facet_wrap(~map_thin$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+write.table(file = "LM_swe_4fam/map_thin_swe",map_thin, row.names = F)
+
+```
+
+```{r swe_order1_phys_mask1_4fam_0.1_filt, echo=FALSE}
+#THIS MUST BE CHANGED!!
+plot_title="swe_order1_phys_mask1_4fam_0.1_filt"
+
+#THIS MUST BE CHANGED!!
+map_ordered <- read.table("LM_swe_4fam/swe_phys_mask1_4fam_order_all_filt.table", header=T)
+str(map_ordered)
+head(map_ordered)
+
+# map_ordered <- map_ordered %>%
+#   arrange(lg) %>%    # First sort by val. This sort the dataframe but NOT the factor levels
+#   mutate(lg)  # This trick update the factor levels
+
+
+
+head(map_ordered)
+
+
+paste("Result for:", plot_title)
+
+#No markers per scaffold and lg
+#apply(df[c("Q1", "Q2")], 2, table)
+
+#Number of markers in map
+paste("Number of markers in LG:", length(map_ordered$position))
+apply(map_ordered[c("lg")], 2, table)
+apply(map_ordered[c("scaffold")], 2, table)
+
+#maplength
+print("Map length per LG min and max")
+#cbind(aggregate(map_ordered$distance_min, list(map_ordered$lg), max), aggregate(map_ordered$distance_max, list(map_ordered$lg), max))
+aggregate(map_ordered$male_position, list(map_ordered$lg), max)
+paste("Total map length (cM): ",sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x))
+
+paste("Appr recombination rate (cM/Mb):", sum(aggregate(map_ordered$male_position, list(map_ordered$lg), max)$x)/sum(aggregate(map_ordered$position, list(map_ordered$scaffold), max)$x)*1000000)
+
+map_ordered$scaffold <- as.factor(map_ordered$scaffold)
+map_ordered$lg <- as.factor(map_ordered$lg)
+
+#plot(map_ordered$lg)
+
+ggplot(map_ordered, aes(map_ordered$scaffold, fill=map_ordered$lg)) +
+  geom_bar() +
+  guides(fill=FALSE) +
+  labs(title = plot_title) +
+  xlab("HiC-scaffold") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+
+
+
+#in one plot
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#free axis
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$scaffold)) +
+  geom_point() +
+#  geom_smooth() +
+  facet_wrap(~map_ordered$lg, scales = "free") +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#in one plot by scaffold
+ggplot(map_ordered, aes(map_ordered$position, map_ordered$male_position, colour=map_ordered$lg)) +
+  geom_point() +
+  facet_wrap(~map_ordered$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+
+Mode <- function(x, na.rm = FALSE) {
+  if(na.rm){
+    x = x[!is.na(x)]
+  }
+
+  ux <- unique(x)
+  return(ux[which.max(tabulate(match(x, ux)))])
+}
+
+#filtering
+#add the most common scaffold per lg
+lg_to_sc <- as.data.frame(aggregate(scaffold~lg, FUN=Mode, data=map_ordered))
+colnames(lg_to_sc) <- c("lg", "scaffold_mode")
+#add to df
+map_rearr <- left_join(map_ordered, lg_to_sc)
+map_rearr$V7 <- 1
+map_rearr[map_rearr$scaffold != map_rearr$scaffold_mode, "V7"] = 0
+
+map_rearr$V7 <- as.factor(map_rearr$V7)
+
+
+#in one plot by scaffold
+ggplot(map_rearr[map_rearr$V7==1,], aes(position, male_position, colour=map_rearr[map_rearr$V7==1,]$lg)) +
+  geom_point() +
+  facet_wrap(~map_rearr[map_rearr$V7==1,]$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+
+#thin map (remove markers within each radtag (300bp))
+#dat[c(T, diff(dat$x.count)>0), ]
+map_rearr$sc_nr <- as.numeric(map_rearr$scaffold_mode)
+
+map_thin <- map_rearr[(diff(map_rearr$sc_nr)!=0 | diff(map_rearr$position) > 300),]
+
+ggplot(map_thin, aes(position, male_position, colour=map_thin$lg)) +
+  geom_point() +
+  facet_wrap(~map_thin$scaffold) +
+  guides(colour=FALSE) +
+  labs(title = plot_title) +
+  xlab("Position (bp)") +
+  ylab("Distance (cM)") +
+  theme_classic()
+
+#write.table(file = "LM_swe_4fam/map_thin_swe",map_thin, row.names = F)
+
+```

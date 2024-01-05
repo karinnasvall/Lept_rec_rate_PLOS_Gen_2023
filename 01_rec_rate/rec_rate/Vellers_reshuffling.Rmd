@@ -1,0 +1,357 @@
+---
+title: "Vellers_rec_rate"
+author: "KN"
+date: "7/5/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Estimating total reshuffling rate
+
+```{r setup_libraries}
+
+library(ggplot2)
+library(ggpubr)
+library(viridis)
+library("tidyr")
+library(plyr)
+library(dplyr)
+library(gridExtra)
+
+
+```
+
+
+```{r data}
+rec_rate_i <- read.table("tables/rec_rate_221027_update.table", header = T)
+str(rec_rate)
+
+chr_length_cat.df <- unique(rec_rate[rec_rate$set=="ls_cat",c("set", "chr_nr", "chr_length_assembly")])
+chr_length_swe.df <- unique(rec_rate[rec_rate$set=="ls_swe",c("set", "chr_nr", "chr_length_assembly")])
+
+
+chr_length_cat_fem.df <- unique(rec_rate[rec_rate$set=="ls_cat",c("set", "chr_nr", "chr_length_assembly", "chr_type")])
+chr_length_swe_fem.df <- unique(rec_rate[rec_rate$set=="ls_swe",c("set", "chr_nr", "chr_length_assembly", "chr_type")])
+
+#add length of combined z-chr, remove 2 other z
+chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr==1,"chr_length_assembly"] <-  sum(chr_length_cat_fem.df[chr_length_cat_fem.df$chr_type=="Z","chr_length_assembly"])
+chr_length_cat_fem.df <- chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr!=3,]
+chr_length_cat_fem.df <- chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr!=4,]
+
+chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr==1,"chr_length_assembly"] <-  sum(chr_length_swe_fem.df[chr_length_swe_fem.df$chr_type=="Z","chr_length_assembly"])
+chr_length_swe_fem.df <- chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr!=6,]
+chr_length_swe_fem.df <- chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr!=18,]
+
+#function to est pairwise reshuffl
+inter_chr_rate <- function(chromosome_length){
+  (1 - sum((chromosome_length/sum(chromosome_length))^2))/2
+}
+
+
+#simulation
+chr_rate <- 0
+
+for (i in seq(1,60)){
+  chr_rate[i] <- (inter_chr_rate(rep(10, i)))
+  if (i==60){
+    sim_inter_chr <- as.data.frame(seq(1,60))
+    colnames(sim_inter_chr) <- "nr_chr"
+    sim_inter_chr$rate <- chr_rate
+  }
+}
+
+
+inter_chr.df <- data.frame(set=c("Catalan", "Swedish", "Catalan", "Swedish"),
+           sex=c("Male", "Male","Female","Female"),
+           rate=c(inter_chr_rate(chr_length_cat.df$chr_length),inter_chr_rate(chr_length_swe.df$chr_length),inter_chr_rate(chr_length_cat_fem.df$chr_length), inter_chr_rate(chr_length_swe_fem.df$chr_length)),
+           nr_chr=c(length(chr_length_cat.df$chr_length), length(chr_length_swe.df$chr_length), length(chr_length_cat_fem.df$chr_length),length(chr_length_swe_fem.df$chr_length)))
+
+```
+
+
+```{r analysis_interchr}
+
+#function to calulate the interchromosomal contribution to overall reshuffeling (min = 0, max 0.5)
+#input is the a vector with chromomsome lengths (calculates the proportion of each chr (chr length/genome length)
+#probability that 2 loci are on the same chomosome is length-prop^2, so prob that two loci are on different chr is 1 - length-prop^2 and the probability of resuffling is 0.5
+
+
+inter_chr_rate(chr_length_swe.df$chr_length_assembly)
+#[1] 0.4811315
+
+inter_chr_rate(chr_length_cat.df$chr_length_assembly)
+#[1] 0.4880597
+
+#diff
+inter_chr_rate(chr_length_cat.df$chr_length_assembly) - inter_chr_rate(chr_length_swe.df$chr_length)
+#[1] 0.006928252
+
+#fem
+inter_chr_rate(chr_length_swe_fem.df$chr_length_assembly)
+#[1] 0.4755534
+
+inter_chr_rate(chr_length_cat_fem.df$chr_length_assembly)
+#[1] 0.4824438
+#diff
+inter_chr_rate(chr_length_cat_fem.df$chr_length_assembly) - inter_chr_rate(chr_length_swe_fem.df$chr_length_assembly)
+#[1] 0.006890313
+
+
+inter_chr.df <- data.frame(set=c("Catalan", "Swedish", "Catalan", "Swedish"),
+           sex=c("Male", "Male","Female","Female"),
+           rate=c(inter_chr_rate(chr_length_cat.df$chr_length),inter_chr_rate(chr_length_swe.df$chr_length),inter_chr_rate(chr_length_cat_fem.df$chr_length), inter_chr_rate(chr_length_swe_fem.df$chr_length)),
+           nr_chr=c(length(chr_length_cat.df$chr_length), length(chr_length_swe.df$chr_length), length(chr_length_cat_fem.df$chr_length),length(chr_length_swe_fem.df$chr_length)))
+
+ggplot(inter_chr.df, aes(nr_chr, rate)) +
+  geom_point(data=sim_inter_chr, aes(nr_chr, rate)) +
+  geom_hline(aes(yintercept=rate, colour = set, linetype = sex), size=1, show.legend = F) +
+  geom_vline(aes(xintercept = nr_chr, colour = set, linetype = sex), size = 1, show.legend = F) +
+  geom_line(aes(colour=set, linetype=sex), size=1) +
+  xlab(label = "Number of independently assorting chromosomes") +
+  ylab(label = "Probability of reshuffling") +
+  scale_colour_manual(values = c(cat_colour, swe_colour)) +
+  scale_linetype_manual(values=c("solid", "dotted")) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 0.2),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.key = element_blank()) 
+
+
+ggsave("figures/interchromosomal_sim.pdf", device = "pdf")
+ggsave("figures/interchromosomal_sim.png", device = "png")
+
+
+```
+
+```{r analysis_intrachr_data}
+#intrachromosomal analysis, Create evenly spaced pseudomarkers, estimate rate of shuffling (extrapolated genetic distance) between each pair of pseudomarkers, the contribution of the chromosome is the average (distance between pseudomarkers/total number of comparisons (all pairs)), weighted by the probability that two random markers are on the same chromosome (chr-length/genome length)^2.
+
+#data: n x 4 matrix of inter-SNP map length data where, in row i, the 1st entry is 
+#the chromosome number corresponding to a SNP, the 2nd entry is the SNP name, the 3rd entry is 
+# the SNP position (HRG build 36 coordinates), the 4th entry is the estimated map distance (cM) 
+# between the SNP in row i and that in row i-1 (if same chromosome).
+
+#rec_rate: map, mkr, phys, gen
+
+cat_d.mat <- rec_rate[rec_rate$set=="ls_cat", c( "chr_nr", "mkr", "phys", "gen")]
+
+swe_d.mat <- rec_rate[rec_rate$set=="ls_swe", c( "chr_nr", "mkr", "phys", "gen")]
+
+
+
+```
+
+```{r analysis_intrachr}
+#set variables
+chr.mat <- cat_d.mat
+chr.mat <- swe_d.mat
+chr.mat <- male_human_chr1[!is.na(male_human_chr1$gen),] #remove NAs
+
+#which data set
+chr_length.df <- chr_length_cat.df
+chr_length.df <- chr_length_swe.df
+chr_length.df <- human_chr_length
+
+
+
+intra_contrib = 0
+
+for (i in seq(min(chr.mat$map),max(chr.mat$map) )){#
+chrom = i  # Chromosome whose contribution to the intra-chrom. value of rbar this script will calculate
+               # Autosomes are 1-22; X chromosome is 23 (only for female data)
+
+chrom_linkage_data = chr.mat[chr.mat$map==chrom, ] #Subset data to the chromosome of interest
+
+loci =  10^4    # Number of pseudo loci
+
+this_chrom_length = chr_length.df[chr_length.df$map==chrom, "chr_length" ]
+
+SNPs = chrom_linkage_data$phys                  # Just the SNP positions on this chromosome
+distances = c(0,diff(chrom_linkage_data$gen))/100         # get diff between row i and row i-1 and converts map distance scale from centiMorgans to Morgans 
+
+markers = round(seq(0,this_chrom_length,this_chrom_length/loci)) # Defines the positions of the evenly-spaced pseudomarkers
+
+
+
+SNPs = c(0,SNPs,this_chrom_length)                  # Adds 0 and the chrom length (or final SNP +1bp) to the SNP array
+
+distances = c(0,distances,0)                        # The average distances between every pair of SNPs, 
+                                                    # including 0 and the end of the chromosome
+cum_distances = cumsum(distances);                  # Cumulative distance as we move from the beginning to 
+                                                    # the end of the chromosome, SNP by SNP
+
+cum_distance_grid = matrix(0,loci,1)
+cum_distance_grid[1] = 0
+below_inds = matrix(0,loci,1)
+below_inds[1] = 1
+above_inds = matrix(0,loci,1)
+above_inds[1] = 2                             # above_inds(i) and below_inds(i) will keep track, for each 
+                                                        #pseudo-locus i, which SNP in the data is immediately before,
+                                                        # and immediately above the pseudo-locus, moving from i = 1
+                                                        # to i = loci. This will be stored as the index numbers of 
+                                                        # these SNPs. 
+
+lowerboundSNP = 1  # Will keep track of which SNPs was immediately below the previous pseudo-locus,
+                    # so that we don't have to look, for each pseudo-locus, at all SNPs to find out which SNP is
+                    # immediately below the pseudo-locus (i.e., as we move from pseudo-locus to pseudo-locus, the 
+                    # "lowerboundSNP" moves upwards. 
+
+for (marker in seq(2,loci)){
+    distances2 =  SNPs[lowerboundSNP:length(SNPs)] - markers[marker] # Distances (bp) between current pseudo-locus and all SNPs 
+    above_ind = min(which(distances2>-0.1))+lowerboundSNP-1    # Which SNP (index) is immediately above the current pseudo-locus?
+    below_ind = above_ind - 1                                # And which is immediately below?
+    
+    above_inds[marker] = above_ind 
+    below_inds[marker] = below_ind
+    lowerboundSNP = below_ind                 # Reset lower bound SNP for next pseudo-locus
+    
+    above_ratio = (markers[marker] - SNPs[below_ind])/(SNPs[above_ind] - SNPs[below_ind])
+    below_ratio = 1-above_ratio    # How far is the pseudomarker between the SNP immediately below  
+                                                   # and immediately above it?
+     
+    cum_distance_grid[marker] =   below_ratio*cum_distances[below_ind] + above_ratio*cum_distances[above_ind]
+    
+                                # The cumulative map distance up till the current pseudo-locus, calculated by
+                                # interpolation from the cumulative map distance up till the SNP immediately below the
+                                # pseudo-locus and the SNP immediately above it. 
+    
+}
+
+cum_distance_grid <- cum_distance_grid[!is.na(cum_distance_grid)]
+loci2 <- length(cum_distance_grid)
+
+
+#actual calculation
+intra_sum = 0  # Will track the running total of the inra-chromosomal contribution to rbar as we move from locus
+                # pair to locus pair
+count_pairs = 0 # Will keep track of how many pairs we've counted---will eventually be loci x (loci-1)/2
+for (locus1 in seq(1,loci2-1)){
+    for (locus2 in seq(locus1+1,loci2)){
+        
+        intra_sum = intra_sum + 0.5*tanh(2*(cum_distance_grid[locus2] - cum_distance_grid[locus1])) # Applies Kosambi's 
+        # map function to the distance between pseudo-locus indexed "locus 1" and the pseudo-locus indexed "locus 2"
+        count_pairs = count_pairs+1;
+        
+    }
+}
+
+intra_contrib[i] = (intra_sum/count_pairs)*(this_chrom_length/sum(chr_length.df$chr_length))^2
+}
+```
+
+
+```{r analysis_intrachr_check_human}
+#check human
+
+human_chr_length <- as.data.frame(cbind(map=c(1:22), chr_length = c(248956422,
+    242193529,
+    198295559,
+    190214555,
+    181538259,
+    170805979,
+    159345973,
+    145138636,
+    138394717,
+    133797422,
+    135086622,
+    133275309,
+    114364328,
+    107043718,
+    101991189,
+    90338345,
+    83257441,
+    80373285,
+    58617616,
+    64444167,
+    46709983,
+    50818468)))  # human chromosome lengths (in bp), order 1-22, excl X
+
+
+#data from https://www.decode.com/addendum/
+male_human <- read.table("temp/male.gmap", header = T)
+colnames(male_human) <- c("map", "mkr", "phys", "gen")
+male_human_chr1 <- male_human[male_human$map=="chr1",]
+male_human_chr1$map <- 1
+
+
+
+intra_contrib
+#[1] 0.002408878 jmf med paper 24.09*10^-4
+```
+
+
+```{r plot_intrachr}
+#save the cat values
+intra_cat <- as.data.frame(c(1:53))
+colnames(intra_cat) <- "map"
+intra_cat$intra_contr <- intra_contrib
+
+write.table(intra_cat, "tables/intra_contrib_cat.txt")
+
+
+#run for swe, obs! save cat first
+intra_swe <- as.data.frame(c(1:29))
+colnames(intra_swe) <- "map"
+intra_swe$intra_contr <- intra_contrib
+
+write.table(intra_swe, "tables/intra_contrib_swe.txt")
+
+#total reshuffling
+round(inter_chr_rate(chr_length_swe.df$chr_length) + sum(intra_swe$intra_contr),4)
+
+round(inter_chr_rate(chr_length_cat.df$chr_length) + sum(intra_cat$intra_contr),4)
+
+#add sex chrinfo
+
+intra_swe$chr_type <- "Autosome"
+intra_swe[intra_swe$map==1 |intra_swe$map==6 | intra_swe$map==18,"chr_type"] <- "Z"
+
+intra_cat$chr_type <- "Autosome"
+intra_cat[intra_cat$map==1 |intra_cat$map==3 | intra_cat$map==4,"chr_type"] <- "Z"
+
+#add chr length
+intra_cat <- join(intra_cat, chr_length_cat.df)
+
+intra_swe <- join(intra_swe, chr_length_swe.df)
+
+intra.df <- rbind(intra_cat, intra_swe)
+
+#plots
+ggplot(intra_cat) +
+  geom_point(aes(map, intra_contr))
+
+ggplot(intra_swe) +
+  geom_point(aes(map, intra_contr))
+
+cat_yellow = "#f2b738"
+swe_blue <- "#2166a3"
+
+mytable <- cbind(Population=c("Catalan", "Swedish"), Intrachr=c(round(sum(intra_cat$intra_contr),4),round(sum(intra_swe$intra_contr),4)), Interchr=c(round(inter_chr_rate(chr_length_cat.df$chr_length),4), round(inter_chr_rate(chr_length_swe.df$chr_length),4)), Total=c(round(inter_chr_rate(chr_length_cat.df$chr_length) + sum(intra_cat$intra_contr),4), round(inter_chr_rate(chr_length_swe.df$chr_length) + sum(intra_swe$intra_contr),4)))
+
+ggplot(intra_swe) +
+  geom_point(aes(map, intra_contr), colour=swe_blue) +
+  geom_point(data=intra_cat, mapping=aes(map, intra_contr), colour = cat_yellow) +
+  scale_y_continuous(name = "Intrachromosomal contribution") +
+  annotation_custom(tableGrob(mytable, theme=ttheme_minimal()), xmin=20, ymin = 0.0006) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 0.2, colour = "grey"),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        axis.ticks = element_line(size = 0.2, colour = "grey"),
+        legend.text = element_text(size = 10),
+        legend.title = element_blank())
+
+ggsave("figures/reshuffling_intra.pdf", device = "pdf")
+ggsave("figures/reshuffling_intra.png", device = "png")
+
+```
+
+
+

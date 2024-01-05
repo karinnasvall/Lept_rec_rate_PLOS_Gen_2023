@@ -1,0 +1,11 @@
+pop name round(min(value, na.rm = T), 5) round(max(value, na.rm = T), 5)
+cat 0_fold 0.00117 0.00279
+cat 4_fold 0.00509 0.01258
+cat intergenic 0.00589 0.01191
+cat intron 0.00574 0.01097
+cat pnps 0.13986 0.34854
+swe 0_fold 0.00091 0.0019
+swe 4_fold 0.00433 0.0102
+swe intergenic 0.00501 0.00973
+swe intron 0.00482 0.00957
+swe pnps 0.16559 0.314

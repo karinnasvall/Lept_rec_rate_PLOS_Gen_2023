@@ -1,0 +1,35 @@
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  pi_chr.df[pi_chr.df$pop == "cat", ]$`0_fold` and pi_chr.df[pi_chr.df$pop == "swe", ]$`0_fold`
+W = 1183, p-value = 2.43e-05
+alternative hypothesis: true location shift is not equal to 0
+
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  pi_chr.df[pi_chr.df$pop == "cat", ]$`4_fold` and pi_chr.df[pi_chr.df$pop == "swe", ]$`4_fold`
+W = 1124, p-value = 0.0002727
+alternative hypothesis: true location shift is not equal to 0
+
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  pi_chr.df[pi_chr.df$pop == "cat", ]$intergenic and pi_chr.df[pi_chr.df$pop == "swe", ]$intergenic
+W = 1258, p-value = 7.049e-07
+alternative hypothesis: true location shift is not equal to 0
+
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  pi_chr.df[pi_chr.df$pop == "cat", ]$intron and pi_chr.df[pi_chr.df$pop == "swe", ]$intron
+W = 1175, p-value = 3.437e-05
+alternative hypothesis: true location shift is not equal to 0
+
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  pi_chr.df[pi_chr.df$pop == "cat", ]$pnps and pi_chr.df[pi_chr.df$pop == "swe", ]$pnps
+W = 900, p-value = 0.1518
+alternative hypothesis: true location shift is not equal to 0
+

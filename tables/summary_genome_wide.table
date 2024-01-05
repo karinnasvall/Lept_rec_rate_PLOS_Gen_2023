@@ -1,0 +1,35 @@
+"pop" "mean(rr_wind, na.rm = T)" "sd(rr_wind, na.rm = T)"
+"1" "LSSPA" 4.60074493889127 3.53885974635913
+"2" "LSSWE" 3.60072398912814 4.61754565596306
+"pop" "median(rr_wind, na.rm = T)" "range(rr_wind, na.rm = T)"
+"1" "LSSPA" 3.9077702549442 0
+"2" "LSSPA" 3.9077702549442 28.3114230138852
+"3" "LSSWE" 2.90619467871921 0
+"4" "LSSWE" 2.90619467871921 68.7788249448566
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSPA", "rr_wind"] and anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSWE", "rr_wind"]
+W = 52614, p-value = 1.326e-05
+alternative hypothesis: true location shift is not equal to 0
+
+"pop" "mean_Z" "sd_Z"
+"1" "LSSPA" 3.10590035352605 2.16284711291272
+"2" "LSSWE" 3.55481120230789 3.56766008388881
+"pop" "mean_A" "sd_A"
+"1" "LSSPA" 4.54274200373775 3.71601349618644
+"2" "LSSWE" 3.442279948661 4.69551802042684
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSPA" & anc_df_2Mb_wind_pop$type == "Z", "rr_wind"] and anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSPA" & !anc_df_2Mb_wind_pop$type == "Z", "rr_wind"]
+W = 3738, p-value = 0.04371
+alternative hypothesis: true location shift is not equal to 0
+
+
+	Wilcoxon rank sum test with continuity correction
+
+data:  anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSWE" & anc_df_2Mb_wind_pop$type == "Z", "rr_wind"] and anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop == "LSSWE" & !anc_df_2Mb_wind_pop$type == "Z", "rr_wind"]
+W = 5350, p-value = 0.6756
+alternative hypothesis: true location shift is not equal to 0
+

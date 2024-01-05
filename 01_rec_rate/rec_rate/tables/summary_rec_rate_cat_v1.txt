@@ -1,0 +1,13 @@
+Markers in map: 2058
+Total map length: 2300.15 
+Maximum map length 89.602 
+Minimum map length 10.094 
+Mean map length 43.399 
+Average marker density: 3.502 
+Mean recombination rate (overall windows): 5.197 
+sd (overall windows): 4.153 
+Maximum rec rate:  36.35 
+Recombination rate Z: 3.315 
+Recombination rate Z (sd): 1.642 
+Recombination rate mean autosomes: 5.405 
+Recombination rate sd autosomes: 4.292

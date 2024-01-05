@@ -1,0 +1,177 @@
+---
+title: "lept_vcf_qc"
+author: "KN"
+date: "29 aug 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## QC of vcf files 
+Modified from https://speciationgenomics.github.io/filtering_vcfs/
+
+```{r set_up, echo=FALSE}
+
+library(ggplot2)
+library(viridis)
+library(tidyr)
+library(dplyr)
+
+
+```
+
+```{r prefix, echo=FALSE}
+#replace the file name prefix with actual filename prefix
+#"~/Desktop/link_map/output/stacks/ref_map/"
+PREFIX_QC="~/Documents/GitHub/Leptidea_rec_rate_div/02_diversity/01b_vcf_qc/output/cat_allsites"
+```
+
+```{r variant_quality, eval=FALSE}
+
+var_qual <- read.delim(paste(PREFIX_QC,".lqual", sep = ""))
+
+a <- ggplot(var_qual, aes(QUAL)) + geom_density(fill = "dodgerblue1", colour = "black", alpha = 0.3)
+a + theme_light()
+
+summary(var_qual$QUAL)
+summary(var_qual[var_qual$QUAL>0,])
+
+a + theme_light() + xlim(0, 100)
+ggplot(var_qual[var_qual$QUAL>0,], aes(QUAL)) + geom_density(fill = "dodgerblue1", colour = "black", alpha = 0.3)  + xlim(0, 1000)
+
+```
+
+
+```{r varaint_depth, echo=FALSE}
+var_depth <- read.delim(paste(PREFIX_QC,".ldepth.mean", sep = ""))
+
+# plot the distribution
+a <- ggplot(var_depth, aes(MEAN_DEPTH)) + geom_density(fill = "dodgerblue1", colour = "black", alpha = 0.3)
+a + theme_light()
+
+summary(var_depth$MEAN_DEPTH)
+
+#Filter for minimun and maximum depth, usually a good rule of thumb is something the mean depth x 2 - so in this case we could set our maximum depth at 40x.
+#With RADseq data I do not filter on maximum coverage?
+
+a + theme_light() + xlim(0, 100)
+a + theme_light() + xlim(0, 25)
+a + theme_light() + xlim(10, 4000)
+a + theme_light() + xlim(100, 4000)
+
+plot(var_depth$VAR_DEPTH~var_depth$MEAN_DEPTH)
+ggplot(var_depth, aes(CHROM, MEAN_DEPTH)) + geom_boxplot() + theme_light() + scale_y_continuous(trans = "log10")
+
+mean(var_depth$MEAN_DEPTH)
+mean(var_depth[var_depth$MEAN_DEPTH>0, "MEAN_DEPTH"])
+mean(var_depth[var_depth$MEAN_DEPTH>5 & var_depth$MEAN_DEPTH<25, "MEAN_DEPTH"])
+
+```
+#Filtering on depth
+mindepth=?
+maxdepth (approx 2x mean depth) = 25
+
+
+```{r variant_missingness, echo=FALSE}
+var_miss <- read.delim(paste(PREFIX_QC,".lmiss", sep = ""))
+# plot the distribution of fmiss - missing fraction
+a <- ggplot(var_miss, aes(F_MISS)) + geom_density(fill = "dodgerblue1", colour = "black", alpha = 0.3)
+a + theme_light()
+
+summary(var_miss$F_MISS)
+```
+
+#Filtering on missing data
+min missing 25%
+We will mask all sites where over 25% of individuals are missing a genotype (vcftools 0.75)
+
+```{r maf, echo=FALSE}
+#allele frequencies
+var_freq <- read.delim(paste(PREFIX_QC,".frq", sep = ""), row.names = NULL)
+
+colnames(var_freq) <- c("CHROM", "POS",	"N_ALLELES",	"N_CHR", "A1", "A2")
+# find minor allele frequency
+var_freq$MAF <- var_freq %>% select(A1, A2) %>% apply(1, function(z) min(z))
+
+#Here we used apply on our allele frequencies to return the lowest allele frequency at each variant. We then added these to our dataframe as the variable maf.
+
+# plot the distribution
+a <- ggplot(var_freq, aes(MAF)) + geom_density(fill = "dodgerblue1", colour = "black", alpha = 0.3)
+a + theme_light()
+
+summary(var_freq$MAF)
+ggplot(var_freq, aes(CHROM, MAF)) + geom_violin() + theme_light()
+
+
+```
+
+#Filtering on MAF
+Will do no filtering on allele frequences
+
+# Individual-based statistics
+
+```{r ind_depth, echo=FALSE}
+ind_depth <- read.delim(paste(PREFIX_QC,".idepth", sep = ""))
+
+
+#plot the distribution as a histogram using ggplot and geom_hist.
+
+a <- ggplot(ind_depth, aes(MEAN_DEPTH)) + geom_histogram(fill = "dodgerblue1", colour = "black", alpha = 0.3, binwidth = 2)
+a + theme_light()
+
+a <- ggplot(ind_depth, aes(N_SITES)) + geom_histogram(fill = "dodgerblue1", colour = "black", alpha = 0.3)
+a + theme_light()
+
+summary(ind_depth)
+```
+
+```{r ind_miss, echo=FALSE}
+ind_miss  <- read.delim(paste(PREFIX_QC,".imiss", sep = ""))
+
+#This is very similar to the missing data per site. Here we will focus on the fmiss column - i.e. the proportion of missing data.
+
+a <- ggplot(ind_miss, aes(F_MISS)) + geom_histogram(fill = "dodgerblue1", colour = "black", alpha = 0.3, binwidth = 0.005)
+a + theme_light()
+
+```
+#Filtering on missing data per ind
+High amount of missing data due to allsites (not just variants)?
+
+```{r ind_heterozygosity, echo=FALSE}
+
+ind_het <- read.delim(paste(PREFIX_QC,".het", sep = ""))
+
+#The output of the --het function is a summary for each individual of the observed number of homozygous sites ( O(hom) ) and the expected number of homozygous sites ( E(hom) ). It also includes the total number of sites that the individual has data for and the inbreeding coefficient F.
+##High levels of allelic dropout (strongly negative F) or high sequencing error problems, DNA contamination (from other ind) (highly positive F)
+#to get heterozygosity have to calulate N_sites - O(HOM) 
+a <- ggplot(ind_het, aes(F)) + geom_histogram(fill = "dodgerblue1", colour = "black", alpha = 0.3, binwidth = 0.01)
+a + theme_light()
+
+# F = 1 - obs het/exp het -> F= 1-((135134-123260)/(135134-87805.5))
+
+
+ind_het$O.HET <- 1-(ind_het$O.HOM./ind_het$N_SITES)
+ind_het$E.HET <- 1-(ind_het$E.HOM./ind_het$N_SITES)
+
+summary(ind_het)
+
+#plot expected Heterozygosity
+plot(ind_het$E.HET~as.factor(ind_het$INDV), main="Expected heterozygosity per ind")
+
+#plot observed Heterozygosity
+plot(ind_het$O.HET~as.factor(ind_het$INDV), main="Observed heterozygosity per ind")
+
+plot(ind_het$E.HET~ind_het$O.HET, main="Expected heterozygosity (%) as a function observed heteroygosity")
+
+plot(ind_het$F~ind_het$N_SITES, main="F as a function of nr of sites")
+
+plot(ind_het$E.HET~ind_het$N_SITES, main="Expected heterozygosity (%) as a function of nr of sites")
+plot(ind_het$O.HET~ind_het$N_SITES, main="Observed heterozygosity (%) as a function of nr of sites")
+
+
+
+
+```
+

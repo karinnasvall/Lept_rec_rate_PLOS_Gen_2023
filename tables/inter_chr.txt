@@ -1,0 +1,5 @@
+"set" "sex" "prob" "nr_chr"
+"1" "Catalan" "Male" 0.488059748942274 52
+"2" "Swedish" "Male" 0.481131496543939 29
+"3" "Catalan" "Female" 0.482443754921101 50
+"4" "Swedish" "Female" 0.475553441717609 27

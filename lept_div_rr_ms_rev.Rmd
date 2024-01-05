@@ -1,0 +1,2268 @@
+---
+title: "lept_rec_rate"
+author: "KN"
+date: "11/9/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup2}
+library(ggplot2)
+library(ggpubr)
+library(viridis)
+library("tidyr")
+library(dplyr)
+library(tidyverse)
+library(magrittr)
+library(nord)
+library(rcartocolor)
+library(scales)
+library(ggpmisc)
+library(lmodel2)
+library(Hmisc)
+library(gridExtra)
+library(patchwork)
+library(ggbio)
+library(circlize)
+
+```
+
+
+```{r setup_colours}
+#from https://www.schemecolor.com/stop-interrupting.php should work with pop_colour
+#col_class <- c("#EFC787", "#ef6384", "#9E3A8B", "#143846")
+nord(palette = "algoma_forest", 4)
+carto_pal(12, "Safe")[c(7,3,2,12)]
+
+show_col(carto_pal(12, "Safe"))[1:7]
+col_type <- show_col(carto_pal(12, "Safe")[c(7,2,3,12)])
+
+show_col(c(pop_colour, "#687856"))
+
+nice_4_palett <- c("#4e4125", "#e59422", "#50474f", "#bf481e")
+
+show_col(c(pop_colour,nice_palett))
+
+col_type <- carto_pal(12, "Safe")[c(2,3,12,7)]
+col_type <- carto_pal(4, "Fall")
+col_type <- carto_pal(4, "Earth")
+
+
+show_col(c(carto_pal(7, "Earth"), carto_pal(7, "Fall")))
+
+show_col(nice_4_palett2)
+nice_4_palett <- c("#4e4125", "#e59422", "#50474f", "#bf481e")
+nice_4_palett2 <- c("#998b6b", "#d49179", "#54779e", "#732c12")
+
+show_col()
+show_col(c(pop_colour,nice_4_palett2))
+show_col(c(pop_colour, carto_pal(12, "Safe")[c(7,2,3,12)]))
+show_col(c(pop_colour, nord("red_mountain")))
+show_col(c(pop_colour,"#7D3232", "#32324B", "#7D6464", "#FAC87D"))
+
+
+######################
+pop_colour <- c("goldenrod2","darkolivegreen")
+show_col(c("#eeb422", "#556b2f"))
+
+pop_colour_dark <- c("#9c7616","#2f3b1b" )
+show_col(pop_colour_dark)
+
+col_class <- c("#998b6b", "#d49179", "#732c12", "#54779e")
+
+#change beige to peach, and light green, adjust to grey scale
+col_type <- c("#bd894d", "#e6bf93", "#b5b991", "#2887a1")
+
+
+
+pop_labeller <- as_labeller(c(LSSPA = "Catalan",
+                             LSSWE = "Swedish"),
+                             default = label_parsed)
+
+class_labeller <- as_labeller(c(`0_fold` = expression(pi[0]),
+                             `4_fold` = expression(pi[4]),
+                             intergenic = expression(pi[intergenic]),
+                             intron = expression(pi[intron]),
+                             pnps = expression(pi[0]/pi[4])),
+                             default = label_parsed)
+
+TXT_SIZE=14
+LINE_SIZE=0.2
+PLOT_LINE=1
+```
+
+##Result rec rate
+
+
+```{r rec_rate}
+rec_rate <- read.table("../../01_link_map_part2_r/tables/rec_rate_220706.table", header = T)
+
+rec_rate %>%
+  filter(map==5)
+
+#set position in assembly (53 lg but 52 scaffolds in cat assembly!)
+map_prel <- read.table("../../01_link_map_part2_r/rec_rate_data/output_marey_map_filt_220706.txt", header = T)
+
+map_prel <- 
+map_prel %>%
+  filter(vld!="FALSE") %>%
+  mutate(phys_assembly=phys)
+
+rec_rate <- left_join(rec_rate, map_prel[,c("set", "map", "mkr", "phys_assembly")]) 
+
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==5,]$map = 54
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==53,]$map = 5
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==54,]$map = 53
+
+#add assembly chromosome length
+cat_length <- read.table("../01_data/chr_length_cat_HiC.txt")
+cat_length$set <- "ls_cat"
+swe_length <- read.table("../01_data/chr_length_swe_HiC.txt")
+swe_length$set <- "ls_swe"
+
+length_prel <- rbind(cat_length, swe_length)
+colnames(length_prel) <- c("sc", "chr_length_assembly", "set")
+
+
+rec_rate <- left_join(rec_rate, length_prel)
+
+rec_rate$gen_assembly <- rec_rate$gen
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==53,]$gen_assembly = rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==53,]$gen_assembly + max(rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==5, "gen"])
+
+rec_rate$chr_nr <- as.numeric(sub("HiC_scaffold_", "", rec_rate$sc))
+
+rec_rate <- rec_rate[order(rec_rate$set, rec_rate$chr_nr, rec_rate$phys_assembly),]
+
+write.table(rec_rate, "../../01_link_map_part2_r/tables/rec_rate_221027_update.table")
+write.table(rec_rate, "documentation//tables/rec_rate_221027_update.table")
+
+rec_rate <- read.table( "../01_link_map_part2_r/tables/rec_rate_221027_update.table", header = T)
+
+#combine with dnds
+#add column with same pop name
+rec_rate$pop <- "LSSWE"
+rec_rate[rec_rate$set=="ls_cat",]$pop <- "LSSPA"
+rec_rate$chrom <- rec_rate$sc
+
+#set rec rate for interval, weighted mean?
+rec_rate_rr <- 
+rec_rate %>%
+  group_by(set, chrom) %>%
+  dplyr::mutate(gen_dist= gen_assembly - lag(gen_assembly), phys_dist=phys_assembly - lag(phys_assembly)) %>%
+  dplyr::mutate(rrate=gen_dist/phys_dist*1000000, weight=phys_dist/chr_length_assembly) %>%
+  group_by(set, map) %>%
+  dplyr::mutate(w_mean_rrate=weighted.mean(x = rrate, w = weight, na.rm = T), ) %>%
+  ungroup()
+
+rec_rate_rr %>%
+ggplot(aes(chr_length_assembly, w_mean_rrate)) +
+         geom_point(aes(colour=chr_type)) +
+  geom_smooth(method="loess") +
+         facet_grid(~pop)
+
+
+mean_pop_rr <- 
+rec_rate_rr %>%
+  group_by(pop) %>%
+  dplyr::summarise(pop_mean_rr=weighted.mean(rrate, w = phys_dist/sum(chr_length_assembly), na.rm = T))
+
+
+mean_pop_chr_rr <- 
+rec_rate_rr %>%
+  group_by(pop, chrom, chr_nr, chr_length_assembly, chr_type) %>%
+  dplyr::summarise(pop_mean_rr=weighted.mean(rrate, w = phys_dist/sum(chr_length_assembly), na.rm = T), map_length=max(gen_assembly))
+
+count_mkr_nr <- 
+rec_rate_rr %>%
+  group_by(pop, chrom) %>%
+  count()
+
+mean_pop_chr_rr$mkr_nr <- count_mkr_nr$n
+
+mean_pop_chr_rr <- 
+mean_pop_chr_rr %>%
+mutate(pop=recode(pop, "LSSPA"="Cat", "LSSWE"="Swe"))
+
+write.table(mean_pop_chr_rr, file = "documentation/tables/summary_chromsome_rr.table", quote = F, row.names = F)
+
+rec_rate_rr %>%
+  group_by(pop) %>%
+  dplyr::summarise(sd=sd(rrate, na.rm = T))
+
+rec_rate_rr %>%
+  group_by(pop, chr_type) %>%
+  dplyr::summarise(weighted.mean(rrate, w = phys_dist/sum(chr_length_assembly), na.rm = T), sd=sd(rrate, na.rm = T))
+
+rec_rate_rr <- as.data.frame(rec_rate_rr)
+str(rec_rate_rr)
+
+t.test(
+rec_rate_rr[rec_rate_rr$set=="ls_cat" & rec_rate_rr$chr_type=="Autosome","rrate"], rec_rate_rr[rec_rate_rr$set=="ls_cat" & rec_rate_rr$chr_type=="Z","rrate"]
+)
+
+wilcox.test(
+rec_rate_rr[rec_rate_rr$set=="ls_swe" & rec_rate_rr$chr_type=="Autosome","rrate"], rec_rate_rr[rec_rate_rr$set=="ls_swe" & rec_rate_rr$chr_type=="Z","rrate"]
+)
+
+wilcox.test(
+rec_rate_rr[rec_rate_rr$set=="ls_cat","rrate"], rec_rate_rr[rec_rate_rr$set=="ls_swe","rrate"]
+)
+
+
+```
+
+
+```{r rec_rate_bins}
+#use breakpoint for binning
+#df %>% mutate(x_bins = cut( x, breaks = c(0,2,6,10)))
+                            
+chain_map <- read.table("01_data/paf/LsinapisSpaM_chr_LsinapisSweM_chr_assoc_red_sorted.txt", sep = "\t", header = T, fill = NA)
+chain_map$chromosome <- gsub("cat_", "HiC_scaffold_", chain_map$chromosome)
+chain_map$chromosome <- gsub("swe_", "HiC_scaffold_", chain_map$chromosome)
+
+
+rec_rate_anc <- rec_rate_rr
+rec_rate_anc$set <- gsub("ls_", "", rec_rate_anc$set)
+
+
+rec_rate_anc$anc_chr_unit <- 0
+rec_rate_anc$type <- as.character(0)
+rec_rate_anc$EBR_length <- 0
+  
+DF=chain_map
+
+for (i in seq(1, length(DF$anc_chr_unit), 1)){
+    CHR=DF$chromosome[i]
+    CHR_ANC=DF$anc_chr_unit[i]
+  START=DF$EBR_start[i]
+  END=DF$EBR_end[i]
+  POP=DF$pop1[i]
+  
+
+rec_rate_anc[rec_rate_anc$set==POP & rec_rate_anc$sc==CHR & rec_rate_anc$phys_assembly>=START & rec_rate_anc$phys_assembly<=END, "anc_chr_unit"]=CHR_ANC
+rec_rate_anc[rec_rate_anc$set==POP & rec_rate_anc$sc==CHR & rec_rate_anc$phys_assembly>=START & rec_rate_anc$phys_assembly<=END, "type"]=DF$type[i]
+rec_rate_anc[rec_rate_anc$set==POP & rec_rate_anc$sc==CHR & rec_rate_anc$phys_assembly>=START & rec_rate_anc$phys_assembly<=END, "EBR_length"]=DF$EBR_length[i]
+}
+
+rec_rate_anc <- 
+rec_rate_anc %>%
+  group_by(set, anc_chr_unit) %>%
+  dplyr::mutate(rr_mean_anc=weighted.mean(rrate, w = phys_dist/EBR_length, na.rm = T)) %>%
+  ungroup()
+
+write.table(rec_rate_anc, file = "documentation/tables/rec_rate_anc.table")
+
+#rec_rate_anc <- read.table(file = "documentation/tables/rec_rate_anc.table")
+#windows 2mb
+rec_rate_anc$anc_chr_unit <- as.factor(rec_rate_anc$anc_chr_unit)
+
+rec_rate_anc$chromosome <- rec_rate_anc$sc
+
+rec_rate_anc_bin <- 
+rec_rate_anc %>%
+  mutate(MB2_bin = cut(phys_assembly, breaks = seq(0,max(chr_length_assembly),2000000))) %>%
+  group_by(pop, chrom, anc_chr_unit, type, chr_length_assembly, MB2_bin) %>%
+  summarise(rr_wind=weighted.mean(rrate,w = phys_dist/2000000, na.rm = T)) %>%
+  mutate(begin=as.integer(stringr::str_split(gsub(pattern='\\(|\\]', replacement = "", x=MB2_bin), ",", simplify = TRUE)[,1]), 
+         end=as.integer(stringr::str_split(gsub(pattern='\\(|\\]', replacement = "", x=MB2_bin), ",", simplify = TRUE)[,2]))  %>%
+  dplyr::mutate(end=replace(end, end>=chr_length_assembly, chr_length_assembly))
+
+rec_rate_anc_bin$begin <- rec_rate_anc_bin$begin + 1
+
+#outlier
+rec_rate_anc_bin[rec_rate_anc_bin$rr_wind >= 40,]
+#one window chr 3 swedish, pos start 6Mb, 
+
+
+write.table(rec_rate_anc_bin, file = "documentation/tables/rec_rate_anc_bin.table")
+
+#weighted mean per ancestral unit
+rec_anc_mean <- 
+rec_rate_anc %>%
+  group_by(pop, anc_chr_unit) %>%
+  dplyr::mutate(rr_mean=weighted.mean(rrate, w = phys_dist/EBR_length, na.rm = T)) %>%
+  select(pop, anc_chr_unit, rr_mean) %>%
+  unique() %>%
+  group_by(anc_chr_unit) %>%
+  dplyr::mutate(rr_mean, delta_rr = rr_mean[pop == "LSSPA"]-rr_mean[pop == "LSSWE"]) %>%
+  dplyr::mutate(rr_mean, ratio_rr = rr_mean[pop == "LSSPA"]/rr_mean[pop == "LSSWE"]) %>%
+  dplyr::mutate(rr_mean, prop_rr = (rr_mean[pop == "LSSPA"]-rr_mean[pop == "LSSWE"])/rr_mean[pop == "LSSWE"])
+  
+write.table(rec_anc_mean, file = "documentation/tables/rec_anc_mean.table")
+  
+#if one CO per chr pair (only one chiasma per bivalent, only 1 sister chr), exp detect CO in 50% of offspring
+expected_rec <-  function(length_chr){
+  50/unique(length_chr)
+}
+
+#if one CO per sister chr or 2 chiasma per bivalent, exp to detect CO in 100% of offspring (or 2 in 50%)
+expected_rec100 <-  function(length_chr){
+  100/unique(length_chr)
+}
+
+
+
+
+```
+
+```{r mean_2mb_windows}
+
+#####
+#Mean and sd for 2Mb windows
+
+anc_df_2Mb_wind %>%
+  dplyr::distinct(pop, MB2_bin, rr_wind) %>%
+  group_by(pop) %>%
+  dplyr::summarize(mean(rr_wind, na.rm = T), sd(rr_wind, na.rm = T)) %>%
+  write.table(file = "documentation/tables/summary_genome_wide.table")
+
+#median and range
+
+anc_df_2Mb_wind %>%
+  dplyr::distinct(pop, MB2_bin, rr_wind) %>%
+  group_by(pop) %>%
+  dplyr::summarize(median(rr_wind, na.rm = T), range(rr_wind, na.rm = T)) %>%
+  write.table(file = "documentation/tables/summary_genome_wide.table", append = T)
+
+
+anc_df_2Mb_wind_pop <- 
+anc_df_2Mb_wind %>%
+  dplyr::distinct(pop, type, MB2_bin, rr_wind)
+
+capture.output(  
+wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE", "rr_wind"]), file = "documentation/tables/summary_genome_wide.table", append = T)
+
+
+
+#Z mean
+anc_df_2Mb_wind %>%
+  dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
+  filter(type %in% "Z") %>%
+  group_by(pop) %>%
+  dplyr::summarize(mean_Z=mean(rr_wind, na.rm = T), sd_Z=sd(rr_wind, na.rm = T)) %>%
+  write.table(file = "documentation/tables/summary_genome_wide.table", append = T)
+
+#Autosomal mean
+anc_df_2Mb_wind %>%
+  dplyr::distinct(pop, MB2_bin, rr_wind, type) %>%
+  filter(!type %in% "Z") %>%
+  group_by(pop) %>%
+  dplyr::summarize(mean_A=mean(rr_wind, na.rm = T), sd_A=sd(rr_wind, na.rm = T)) %>%
+  write.table(file = "documentation/tables/summary_genome_wide.table", append = T)
+
+
+#diff Z autosomes
+
+capture.output(  
+wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA" & anc_df_2Mb_wind_pop$type=="Z", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSPA" & !anc_df_2Mb_wind_pop$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
+
+
+capture.output(  
+wilcox.test(anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE" & anc_df_2Mb_wind_pop$type=="Z", "rr_wind"], anc_df_2Mb_wind_pop[anc_df_2Mb_wind_pop$pop=="LSSWE" & !anc_df_2Mb_wind_pop$type=="Z", "rr_wind"]) , file = "documentation/tables/summary_genome_wide.table", append = T)
+
+```
+
+
+```{r anc_rr_chain_circos}
+
+chain_map$chromosome_pop <- paste(chain_map$chromosome, chain_map$pop, sep = "_")
+chain_map$chr_nr <- as.numeric(gsub("HiC_scaffold_", "", chain_map$chromosome))
+chain_map$chr_nr_real <- as.numeric(gsub("HiC_scaffold_", "", chain_map$chromosome))
+
+chain_map[chain_map$pop1=="cat", "chr_nr"] = 
+chain_map[chain_map$pop1=="cat", "chr_nr"] + 29
+
+#within range
+chain_map$EBR_start <- chain_map$EBR_start+1
+chain_map$EBR_end <- chain_map$EBR_end-1
+
+
+chain_map[chain_map$Strand=="", "Strand"] <- "*"
+
+
+chain_map_seq <- left_join(chain_map, length_prel, by=c("pop1"="pop", "chromosome"="chromosome"))
+chain_map_seq <- chain_map_seq[order(chain_map_seq$chr_nr),]
+
+write.table(chain_map_seq, file = "01_data/paf/chain_map_seq_circos.table")
+
+chain_map_seq <- read.table(file = "01_data/paf/chain_map_seq_circos.table")
+##################
+
+#Circos
+##################
+
+chain_swe <- chain_map_seq[chain_map_seq$pop1=="swe",]
+
+chain_cat <- chain_map_seq[chain_map_seq$pop1=="cat",]
+
+chain_anc <- left_join(chain_swe, chain_cat, by="anc_chr_unit")
+
+
+
+chain_swe_circ <- chain_anc[chain_anc$pop1.x=="swe", c("chromosome_pop.x", "EBR_start.x", "EBR_end.x", "anc_chr_unit")]
+chain_cat_circ <- chain_anc[chain_anc$pop1.y=="cat",c("chromosome_pop.y", "EBR_start.y", "EBR_end.y", "anc_chr_unit")]
+
+
+chain_swe_circ_ma <- matrix(as.matrix(chain_swe_circ), ncol = ncol(chain_swe_circ), dimnames=NULL)
+chain_cat_circ_ma <- matrix(as.matrix(chain_cat_circ), ncol = ncol(chain_cat_circ), dimnames=NULL)
+
+
+#colour by swedish 
+
+anc_col <- 
+left_join(chain_anc, data.frame(chromosome_pop.x=unique(chain_anc$chromosome_pop.x), 
+                                col_anc_vector= rep(carto_pal("Antique", n = 12), 3)[1:29]))
+           
+rep(carto_pal("Antique", n = 12), 3)[1:29]
+show_col(carto_pal("Antique", n = 12))
+
+#colour by Swedish chr
+
+circos.clear()
+col_text <- "black"
+block_col <- alpha(c(rep("darkolivegreen", 29), rep("goldenrod2", 52)), alpha = 0.8)
+anc_col <- alpha(anc_col$col_anc_vector, alpha = 0.5)
+circos.par(cell.padding = c(0.02, 0, 0.02, 0))
+circos.initialize(factors=unique(chain_map_seq$chromosome_pop), 
+xlim=matrix(c(rep(0, 81), unique(chain_map_seq$chr_length)), ncol=2))
+
+#The xlim matrix defines the start and stop for each genome/chr. Essentially the genome or chr sizes.
+
+
+circos.track(ylim=c(0, 1), panel.fun=function(x, y) {
+chr=gsub("_swe", "", gsub("_cat", "", gsub("HiC_scaffold_", "", CELL_META$sector.index)))
+xlim=CELL_META$xlim
+ylim=CELL_META$ylim
+circos.text(mean(xlim), mean(ylim), chr, cex=0.6, col=col_text, 
+facing="bending.inside", niceFacing=TRUE)
+}, bg.col=block_col, bg.border=F, track.height=0.06)
+
+
+# rearrangements
+circos.genomicLink(chain_cat_circ,chain_swe_circ, col=anc_col)
+#run the line twice to get deeper colours
+
+
+#colour by know fusion/fission
+carto_pal("Antique", n = 8)
+#change to grey and brown from, carto_pal("Antique", n = 12)))        
+col_anc_vector <- c("#855C75", "#AF6458", "#D9AF6B", "#736F4C", "#526A83", "#625377", "#7C7C7C", "#8C785D")
+
+##############3
+#black panther colour 
+# show_col(c(pop_colour, "#573847", "#67493F", "#A0885C", "#526A83", "#82969D", "#F3A250", "#BD434E"))
+# 
+# show_col(c(pop_colour, "#573847", "#67493F", adjustcolor("#A0885C", offset = c(0, 0, -0.1, 0)), adjustcolor("#526A83", offset = c(0.15, 0.25, 0.25, 0)), "#82969D", "#F3A250", "#BD434E", adjustcolor("#67493F", offset = c(0.4, 0.4, 0.4, 0))))
+# 
+# col_anc_vector <- c( "#BD434E", adjustcolor("#67493F", offset = c(0.4, 0.4, 0.4, 0)), "#F3A250", "#A0885C", adjustcolor("#526A83", offset = c(0.15, 0.25, 0.25, 0)), "#573847", "#82969D", "#67493F")
+# #######################3
+
+show_col(col_anc_vector)
+
+type_anc_col <- left_join(chain_anc, data.frame(type.x=unique(chain_anc$type.x), col_anc_vector))
+
+write.table(type_anc_col, file = "documentation/tables/colour_vector_anc_units", row.names = F, quote = F)
+
+circos.clear()
+col_text <- "black"
+block_col <- alpha(c(rep("darkolivegreen", 29), rep("goldenrod2", 52)), alpha = 0.8)
+anc_col <- alpha(type_anc_col$col_anc_vector, alpha = 0.5)
+circos.par(cell.padding = c(0.02, 0, 0.02, 0))
+circos.initialize(factors=unique(chain_map_seq$chromosome_pop), 
+xlim=matrix(c(rep(0, 81), unique(chain_map_seq$chr_length)), ncol=2))
+
+#The xlim matrix defines the start and stop for each genome/chr. Essentially the genome or chr sizes.
+
+
+circos.track(ylim=c(0, 1), panel.fun=function(x, y) {
+chr=gsub("_swe", "", gsub("_cat", "", gsub("HiC_scaffold_", "", CELL_META$sector.index)))
+xlim=CELL_META$xlim
+ylim=CELL_META$ylim
+circos.text(mean(xlim), mean(ylim), chr, cex=0.8, col=col_text, 
+facing="bending.inside", niceFacing=TRUE)
+}, bg.col=block_col, bg.border=F, track.height=0.08)
+
+
+# rearrangements
+circos.genomicLink(chain_cat_circ,chain_swe_circ, col=anc_col)
+#run the line twice to get deeper colours
+
+
+#save by 
+
+```
+
+```{r plots_ms_marey}
+
+
+#add a column with new names on chr
+
+#plot marey maps, cat
+marey_cat <- ggplot(rec_rate_rr[rec_rate_rr$set=="ls_cat",], aes(phys/1000000, gen)) +
+  geom_point(size=0.6, colour="black") +
+  facet_wrap(~map) +
+  scale_y_continuous(name = "Genetic distance (cM)", 
+                     limits = c(0,90)) +
+  scale_x_continuous(name = "Physical position (Mb)") +
+  labs(title = "Marey map (Catalan)") +
+  # ggpubr::stat_cor(method = "pearson",
+  # cor.coef.name = "R",
+  # label.sep = ",",
+  # r.accuracy = 0.01,
+  # p.accuracy = 0.0001,
+  # label.x = 0,
+  # label.y = 70,
+  # geom = "text",
+  # size = 2,
+  # show.legend = NA) +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+#plot marey maps, swe
+marey_swe <- ggplot(rec_rate_rr[rec_rate_rr$set=="ls_swe",], aes(phys/1000000, gen)) +
+  geom_point(size=0.6, colour="black") +
+  facet_wrap(~map, ncol = 8) +
+  scale_y_continuous(name = "Genetic distance (cM)", 
+                     limits = c(0,90)) +
+  scale_x_continuous(name = "Physical position (Mb)") +
+  labs(title = "Marey map (Swedish)") +
+  # ggpubr::stat_cor(method = "pearson",
+  # cor.coef.name = "R",
+  # label.sep = ",",
+  # r.accuracy = 0.01,
+  # p.accuracy = 0.0001,
+  # label.x = 0,
+  # label.y = 70,
+  # geom = "text",
+  # size = 2,
+  # show.legend = NA) +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+ggarrange(marey_cat, marey_swe, ncol = 1, nrow = 2, heights = c(1.6,1))
+
+ggsave(plot = marey_cat, "documentation/figures_ms_rev/marey_map_cat.pdf", height = 10, width = 14)
+ggsave(plot = marey_cat, "documentation/figures_ms_rev/marey_map_cat.png", height = 10, width = 14)
+
+ggsave(plot = marey_swe, "documentation/figures_ms_rev/marey_map_swe.pdf", height = 6, width = 14)
+ggsave(plot = marey_swe, "documentation/figures_ms_rev/marey_map_swe.png", height = 6, width = 14)
+
+
+```
+
+```{r plots_ms_rec_rate}
+
+rec_rate_anc_bin <- read.table(file = "documentation/tables/rec_rate_anc_bin.table")
+
+anc_df_2Mb_wind$chr_nr <- sub("HiC_scaffold_", "", anc_df_2Mb_wind$chrom, )
+anc_df_2Mb_wind$chr_nr <- sub("_LSSPA", "", anc_df_2Mb_wind$chr_nr, )
+anc_df_2Mb_wind$chr_nr <- sub("_LSSWE", "", anc_df_2Mb_wind$chr_nr, )
+anc_df_2Mb_wind$chr_nr <- as.numeric(anc_df_2Mb_wind$chr_nr)
+
+pop.labs <- c("Catalan", "Swedish")
+names(pop.labs) <- c("ls_cat", "ls_swe")
+
+
+rr_cat <- ggplot(anc_df_2Mb_wind[anc_df_2Mb_wind$set=="cat",], aes((begin + 1000000)/1000000, rr_wind)) +
+  #geom_point(size = 0.4, colour = "grey") +
+  geom_line(data = anc_df_2Mb_wind[anc_df_2Mb_wind$set=="cat" & anc_df_2Mb_wind$chr_nr==51,], aes((begin + 1000000)/1000000, rr_wind)) +
+  geom_smooth(colour="black", se=F, span=0.5, size=0.4, method = "loess", ) +
+  facet_wrap(~chr_nr, scales = "free", ncol = 8) +
+  labs(title = "Recombination rate (Catalan)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+rr_swe <- ggplot(anc_df_2Mb_wind[anc_df_2Mb_wind$set=="swe",], aes((begin + 1000000)/1000000, rr_wind)) +
+  #geom_point(size = 0.4, colour = "grey") +
+  #geom_line(size = 0.2, colour = "grey") +
+  geom_smooth(colour="black", se=F, span=0.5, size=0.4, method = "loess") +
+  facet_wrap(~chr_nr, scales = "free", ncol = 8) +
+  labs(title = "Recombination rate (Swedish)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+ggarrange(rr_cat, rr_swe, ncol = 1, nrow = 2, heights = c(1.4,1))
+
+ggsave(plot = rr_cat, "documentation/figures_ms_rev/rec_rate_along_chr_free_cat.pdf", height =10, width = 14)
+ggsave(plot = rr_cat ,"documentation/figures_ms_rev/rec_rate_along_chr_free_cat.png", height =10, width = 14)
+ggsave(plot = rr_swe, "documentation/figures_ms_rev/rec_rate_along_chr_free_swe.pdf", height =6, width = 14)
+ggsave(plot = rr_swe ,"documentation/figures_ms_rev/rec_rate_along_chr_free_swe.png", height =6, width = 14)
+
+means <- aggregate(loess~set, mean, data = rec_rate)
+means$sd <- aggregate(loess~set, sd, data = rec_rate)$loess
+means$quantile <- as.numeric(as.matrix(aggregate(loess~set, quantile, data = rec_rate))[,5])
+
+
+
+
+
+
+```
+
+
+```{r plots_rr_fig1}
+#boxplot
+box_pop <-  
+ggplot(rec_rate_anc_bin, aes(pop, rr_wind)) +
+  geom_boxplot(aes(fill=pop)) +
+  #geom_label(data = mean_pop_rr, aes(label = paste("Mean:",pop_mean_rr, y = (pop_mean_rr + 1)))) +
+  ylab("cM/Mb") +
+  scale_fill_discrete(type = pop_colour) +
+  stat_compare_means(method = "wilcox", label.x.npc = 0, label.y = 19, size = TXT_SIZE/2.8) +
+  coord_cartesian(ylim = c(0, 22)) +
+  scale_y_continuous(expand = c(0.01,0.05)) +
+  scale_x_discrete(labels = c("Catalan", "Swedish")) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+        axis.text.x = element_text(size = TXT_SIZE, colour = "black", margin=margin(18, 0,0,0)),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+
+rec_rate_anc_bin$size_group <- "Small"
+rec_rate_anc_bin[rec_rate_anc_bin$chr_length_assembly>quantile(unique(rec_rate_anc_bin$chr_length_assembly))[4],]$size_group <- "Large"
+
+rec_rate_anc_bin[(rec_rate_anc_bin$begin - rec_rate_anc_bin$end) <= 0, ]
+
+reg_lm <- 
+  ggplot(rec_rate_anc_bin,aes((begin + ((end - begin)/2))/chr_length_assembly, rr_wind)) +
+  geom_point(colour="grey", alpha=0.25) +
+  geom_smooth(aes(colour=pop, linetype=size_group), method = "loess", size = 2, alpha = 0.7, se=F) +
+  ylab("cM/Mb") +
+  xlab("Relative position") +
+  scale_y_continuous(expand = c(0.01,0.05), 
+                     limits = c(0,25)) +
+  scale_x_continuous(expand = c(0.01,0.05)) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_linetype_manual(name = "Chromosome size",
+                        labels = c( "Small < 18Mb", "Large > 18 Mb"),
+                        values = c("dashed","solid")) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        axis.text = element_text(size = TXT_SIZE),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        axis.title.x = element_text(size = TXT_SIZE),
+        axis.title.y = element_text(size = TXT_SIZE),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(0.8,0.75)) +
+  guides(colour=guide_legend(order=1, keywidth = 2),
+         linetype=guide_legend(order=2, keywidth = 2, override.aes = list(colour="#3d3d3d", linetype=c("solid", "dotted"))))
+
+
+reg_lm_folded <- 
+  ggplot(rec_rate_anc_bin,aes(sqrt((((begin + ((end - begin)/2))/chr_length_assembly)-0.5)^2), rr_wind)) +
+  geom_point(colour="grey", alpha=0.25) +
+  geom_smooth(aes(colour=pop, linetype=size_group), method = "loess", size=1.5, alpha = 0.7, se=F, span=0.8) +
+  ylab("cM/Mb") +
+  xlab("Relative position") +
+  scale_y_continuous(expand = c(0.01,0.05), 
+                     limits = c(0,22)) +
+  scale_x_continuous(expand = c(0.005, 0.01)) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_linetype_manual(name = "Chromosome size",
+                        labels = c( "Small < 18Mb", "Large > 18 Mb"),
+                        values = c("dashed","solid")) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        axis.text = element_text(size = TXT_SIZE, colour = "black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        axis.title.x = element_text(size = TXT_SIZE, colour = "black", margin=margin(-9,0,0,0)),
+        axis.title.y = element_text(size = TXT_SIZE),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(0.8,0.75)) +
+  guides(colour=guide_legend(order=1, keywidth = 2),
+         linetype=guide_legend(order=2, keywidth = 2.5, override.aes = list(colour="#3d3d3d", linetype=c("solid", "dashed"))))
+
+
+#reg folded excluding polymorphic
+rec_rate_anc_bin %>%
+  dplyr::mutate(chr_nr=sub("HiC_scaffold_", "", chrom)) %>%
+  dplyr::mutate(chr_nr=sub("_LSSPA", "", chr_nr)) %>%
+  dplyr::mutate(chr_nr=sub("_LSSWE", "", chr_nr)) %>%
+  filter(pop=="LSSPA" & !chr_nr %in% c("6", "18", "5", "45") || pop %in% "LSSWE" & !chr_nr %in% c("7", "5", "27", "11", "25", "19", "26", "21", "28")) %>%
+  
+    ggplot(aes(sqrt((((begin + ((end - begin)/2))/chr_length_assembly)-0.5)^2), rr_wind)) +
+  geom_point(colour="grey", alpha=0.25) +
+  geom_smooth(aes(colour=pop, linetype=size_group), method = "loess", size=1.5, alpha = 0.7, se=F, span=0.8) +
+  ylab("cM/Mb") +
+  xlab("Relative position") +
+  scale_y_continuous(expand = c(0.01,0.05), 
+                     limits = c(0,22)) +
+  scale_x_continuous(expand = c(0.005, 0.01)) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_linetype_manual(name = "Chromosome size",
+                        labels = c( "Small < 18Mb", "Large > 18 Mb"),
+                        values = c("dashed","solid")) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        axis.text = element_text(size = TXT_SIZE, colour = "black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        axis.title.x = element_text(size = TXT_SIZE, colour = "black", margin=margin(-9,0,0,0)),
+        axis.title.y = element_text(size = TXT_SIZE),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(0.8,0.75)) +
+  guides(colour=guide_legend(order=1, keywidth = 2),
+         linetype=guide_legend(order=2, keywidth = 2.5, override.aes = list(colour="#3d3d3d", linetype=c("solid", "dashed"))))
+
+
+########################
+
+line_colour="red"
+
+corr_chr <- 
+ggplot(mean_pop_chr_rr, aes(chr_length_assembly/1000000,pop_mean_rr)) +
+  geom_smooth(data=mean_pop_chr_rr[mean_pop_chr_rr$pop=="Cat",], aes(chr_length_assembly/1000000,pop_mean_rr), method = "loess", se=F, linetype="solid", colour=pop_colour_dark[1], size=2) +
+  geom_smooth(data=mean_pop_chr_rr[mean_pop_chr_rr$pop=="Swe",], aes(chr_length_assembly/1000000,pop_mean_rr), method = "loess", se=F, linetype="solid", colour=pop_colour_dark[2], size=2) +
+  geom_smooth(aes(colour=pop), method = "loess", se=F, linetype="solid") +
+  geom_point(aes(fill=pop), shape = 21, colour = "black", size = 4) +
+  scale_fill_discrete(type = pop_colour, 
+                      labels = c("Catalan", "Swedish"), 
+                      name="Population") +
+  geom_point(aes(colour=chr_type), size = 2) +
+  geom_point(aes(size=chr_type), colour="transparent") + #these are added to create legends
+  geom_line(aes(chr_length_assembly/1000000, expected_rec(chr_length_assembly/1000000)), colour = "black", linetype="dashed", size=1) +
+  geom_line(aes(chr_length_assembly/1000000, expected_rec100(chr_length_assembly/1000000)), colour = line_colour, linetype="dashed", size=1) +
+  scale_colour_manual(values = c("transparent", pop_colour, "white"),
+                      guide="none") +
+  geom_line(aes(linetype=pop), colour="transparent") +
+  scale_linetype(labels=c("One crossover", "Two crossovers")) +
+  #facet_wrap(~set, labeller = labeller(set = pop.labs), ncol = 2, scales= "free_y") +
+  scale_y_continuous(name = "Recombination rate (cM/Mb)", 
+                     limits = c(0,12)) +
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  stat_cor(data=mean_pop_chr_rr[mean_pop_chr_rr$pop=="Cat",], aes(chr_length_assembly/1000000,pop_mean_rr), colour=pop_colour_dark[1], method = "spearman", cor.coef.name = "rho", label.x = 20, label.y = 11, size = TXT_SIZE/2.8) +
+  stat_cor(data=mean_pop_chr_rr[mean_pop_chr_rr$pop=="Swe",], aes(chr_length_assembly/1000000,pop_mean_rr), colour=pop_colour[2], method = "spearman", cor.coef.name = "rho", label.x = 20, label.y = 10.3, size = TXT_SIZE/2.8) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 0.2, colour = "black"),
+        axis.text = element_text(size = TXT_SIZE),
+        axis.title.x = element_text(size = TXT_SIZE),
+        axis.title.y = element_text(size = TXT_SIZE),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = "right",
+        strip.background = element_blank(),
+        strip.text = element_blank()) +
+  guides(fill=guide_legend(order = 1), 
+         size=guide_legend(order = 2,"Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))),
+         linetype=guide_legend(order = 3, "Expected recombination rate", keywidth = 2.5,  override.aes=list(linetype="dashed", colour=c("black", line_colour),size=1 )))
+
+
+ggsave(plot=
+ggarrange(
+  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h", widths = c(1,1.2)), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), nrow = 2, heights = c(1,1.3), labels = c("", "c"), font.label = list(size=TXT_SIZE)) ,
+  "documentation/figures_ms/Fig_1_box_reg_corr.pdf", device = "pdf", height = 10, width = 10)
+
+ggsave(plot=
+ggarrange(
+  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h", widths = c(1,1.2)), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), nrow = 2, heights = c(1,1.3), labels = c("", "c"), font.label = list(size=TXT_SIZE)) ,
+  "documentation/figures_ms/Fig_1_box_reg_corr.png", device = "png", height = 10, width = 10)
+
+
+
+#excess maplength
+excess_map <- 
+mean_pop_chr_rr %>%
+ggplot(aes(chr_length_assembly/1000000,map_length-50)) +
+  geom_smooth(method = "lm", se=F, linetype="solid", colour="black") +
+  geom_point(aes(fill=pop), shape = 21, colour = "black", size = 4) +
+  scale_fill_discrete(type = pop_colour, 
+                      labels = c("Catalan", "Swedish"), 
+                      name="Population") +
+  geom_point(aes(colour=chr_type), size = 2) +
+  geom_point(aes(size=chr_type), colour="transparent") + #these are added to create legends
+  scale_colour_manual(values = c("transparent", "white", pop_colour),
+                      guide="none") +
+  scale_y_continuous(name = "Map length - 50cM") + 
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  geom_hline(yintercept = 0, colour = "black", linetype="dashed", size=1) +
+  geom_hline(yintercept = 50, colour = line_colour, linetype="dashed", size=1) +
+  geom_line(aes(linetype=pop), colour="transparent") +
+  scale_linetype(labels=c("One crossover", "Two crossovers")) +
+  stat_cor(aes(label =paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+             label.y = 40, size = TXT_SIZE/2.8, digits= 2) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        axis.text = element_text(size = TXT_SIZE, colour = "black"),
+        axis.title = element_text(size = TXT_SIZE, colour = "black"),
+        legend.text = element_text(size = TXT_SIZE, colour = "black"),
+        legend.title = element_text(size = TXT_SIZE, colour = "black"),
+        legend.key = element_blank(),
+        legend.position = "right") +
+  guides(fill=guide_legend(order = 1), 
+         size=guide_legend(order = 2,"Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))),
+         linetype=guide_legend(order = 3, "Expected recombination rate", keywidth = 2.5,  override.aes=list(linetype="dashed", colour=c("black", line_colour),size=1 )))
+  
+ggsave("documentation/figures_ms/excess_map_length_supppl.pdf", height = 6, width = 10)
+ggsave("documentation/figures_ms/excess_map_length_supppl.png", height = 6, width = 10)
+
+ggsave(plot=
+  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm"), legend.position = "none"), excess_map  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), labels = c("a", "b", "c", "d", ""), font.label = list(size=TXT_SIZE), align = "hv", widths = c(1, 1.3, 1, 1.3)) ,
+  "documentation/figures_ms/Fig_1_alt2.pdf", height = 10, width = 14)
+
+ggsave(plot=
+  ggarrange(box_pop + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), reg_lm_folded + theme(plot.margin = margin(1,0.5,0.4,0.3, "cm")), corr_chr  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm"), legend.position = "none"), excess_map  + theme(plot.margin = margin(0.4,0.5,0.4,0.3, "cm")), labels = c("a", "b", "c", "d", ""), font.label = list(size=TXT_SIZE), align = "hv", widths = c(1, 1.3, 1, 1.3)) ,
+  "documentation/figures_ms/Fig_1_alt2.png", height = 10, width = 14)
+
+```
+
+```{r data_interchrom_reshuff}
+#rec_rate <- read.table("documentation/tables/rec_rate_221027_update.table", header = T)
+str(rec_rate)
+
+chr_length_cat.df <- unique(rec_rate[rec_rate$set=="ls_cat",c("set", "chr_nr", "chr_length_assembly")])
+chr_length_swe.df <- unique(rec_rate[rec_rate$set=="ls_swe",c("set", "chr_nr", "chr_length_assembly")])
+
+
+chr_length_cat_fem.df <- unique(rec_rate[rec_rate$set=="ls_cat",c("set", "chr_nr", "chr_length_assembly", "chr_type")])
+chr_length_swe_fem.df <- unique(rec_rate[rec_rate$set=="ls_swe",c("set", "chr_nr", "chr_length_assembly", "chr_type")])
+
+#add length of combined z-chr, remove 2 other z
+chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr==1,"chr_length_assembly"] <-  sum(chr_length_cat_fem.df[chr_length_cat_fem.df$chr_type=="Z","chr_length_assembly"])
+chr_length_cat_fem.df <- chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr!=3,]
+chr_length_cat_fem.df <- chr_length_cat_fem.df[chr_length_cat_fem.df$chr_nr!=4,]
+
+chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr==1,"chr_length_assembly"] <-  sum(chr_length_swe_fem.df[chr_length_swe_fem.df$chr_type=="Z","chr_length_assembly"])
+chr_length_swe_fem.df <- chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr!=6,]
+chr_length_swe_fem.df <- chr_length_swe_fem.df[chr_length_swe_fem.df$chr_nr!=18,]
+
+#function to est pairwise reshuffl
+inter_chr_rate <- function(chromosome_length){
+  (1 - sum((chromosome_length/sum(chromosome_length))^2))/2
+}
+
+
+#simulation
+chr_rate <- 0
+nr_chr_in_sim=80
+
+for (i in seq(1,nr_chr_in_sim)){
+  chr_rate[i] <- (inter_chr_rate(rep(10, i)))
+  if (i==nr_chr_in_sim){
+    sim_inter_chr <- as.data.frame(seq(1,nr_chr_in_sim))
+    colnames(sim_inter_chr) <- "nr_chr"
+    sim_inter_chr$prob <- chr_rate
+  }
+}
+
+
+inter_chr.df <- data.frame(set=c("Catalan", "Swedish", "Catalan", "Swedish"),
+           sex=c("Male", "Male","Female","Female"),
+           prob=c(inter_chr_rate(chr_length_cat.df$chr_length_assembly),
+                  inter_chr_rate(chr_length_swe.df$chr_length_assembly),
+                  inter_chr_rate(chr_length_cat_fem.df$chr_length_assembly),
+                  inter_chr_rate(chr_length_swe_fem.df$chr_length_assembly)),
+           nr_chr=c(length(chr_length_cat.df$chr_length_assembly), 
+                    length(chr_length_swe.df$chr_length_assembly),
+                    length(chr_length_cat_fem.df$chr_length_assembly),
+                    length(chr_length_swe_fem.df$chr_length_assembly)))
+
+
+write.table(inter_chr.df, file = "documentation/tables/inter_chr.txt")
+```
+
+```{r analysis_intrachr_data}
+#intrachromosomal analysis, Create evenly spaced pseudomarkers, estimate rate of shuffling (extrapolated genetic distance) between each pair of pseudomarkers, the contribution of the chromosome is the average (distance between pseudomarkers/total number of comparisons (all pairs)), weighted by the probability that two random markers are on the same chromosome (chr-length/genome length)^2.
+
+#data: n x 4 matrix of inter-SNP map length data where, in row i, the 1st entry is 
+#the chromosome number corresponding to a SNP, the 2nd entry is the SNP name, the 3rd entry is 
+# the SNP position (HRG build 36 coordinates), the 4th entry is the estimated map distance (cM) 
+# between the SNP in row i and that in row i-1 (if same chromosome).
+
+#rec_rate: map, mkr, phys, gen
+
+cat_d.mat <- rec_rate[rec_rate$set=="ls_cat", c( "chr_nr", "mkr", "phys_assembly", "gen_assembly")]
+
+swe_d.mat <- rec_rate[rec_rate$set=="ls_swe", c( "chr_nr", "mkr", "phys_assembly", "gen_assembly")]
+
+
+
+```
+
+```{r analysis_intrachr}
+#set variables
+chr.mat <- cat_d.mat
+chr.mat <- swe_d.mat
+chr.mat <- male_human_chr1[!is.na(male_human_chr1$gen),] #remove NAs
+
+#which data set
+chr_length.df <- chr_length_cat.df
+chr_length.df <- chr_length_swe.df
+chr_length.df <- human_chr_length
+
+colnames(chr.mat) <- c("map", "mkr", "phys", "gen")
+colnames(chr_length.df) <- c("set", "map", "chr_length")
+
+intra_contrib = 0
+
+for (i in seq(min(chr.mat$map),max(chr.mat$map) )){#
+chrom = i  # Chromosome whose contribution to the intra-chrom. value of rbar this script will calculate
+               # Autosomes are 1-22; X chromosome is 23 (only for female data)
+
+chrom_linkage_data = chr.mat[chr.mat$map==chrom, ] #Subset data to the chromosome of interest
+
+loci =  10^4    # Number of pseudo loci
+
+this_chrom_length = chr_length.df[chr_length.df$map==chrom, "chr_length" ]
+
+SNPs = chrom_linkage_data$phys                  # Just the SNP positions on this chromosome
+distances = c(0,diff(chrom_linkage_data$gen))/100         # get diff between row i and row i-1 and converts map distance scale from centiMorgans to Morgans 
+
+markers = round(seq(0,this_chrom_length,this_chrom_length/loci)) # Defines the positions of the evenly-spaced pseudomarkers
+
+
+
+SNPs = c(0,SNPs,this_chrom_length)                  # Adds 0 and the chrom length (or final SNP +1bp) to the SNP array
+
+distances = c(0,distances,0)                        # The average distances between every pair of SNPs, 
+                                                    # including 0 and the end of the chromosome
+cum_distances = cumsum(distances);                  # Cumulative distance as we move from the beginning to 
+                                                    # the end of the chromosome, SNP by SNP
+
+cum_distance_grid = matrix(0,loci,1)
+cum_distance_grid[1] = 0
+below_inds = matrix(0,loci,1)
+below_inds[1] = 1
+above_inds = matrix(0,loci,1)
+above_inds[1] = 2                             # above_inds(i) and below_inds(i) will keep track, for each 
+                                                        #pseudo-locus i, which SNP in the data is immediately before,
+                                                        # and immediately above the pseudo-locus, moving from i = 1
+                                                        # to i = loci. This will be stored as the index numbers of 
+                                                        # these SNPs. 
+
+lowerboundSNP = 1  # Will keep track of which SNPs was immediately below the previous pseudo-locus,
+                    # so that we don't have to look, for each pseudo-locus, at all SNPs to find out which SNP is
+                    # immediately below the pseudo-locus (i.e., as we move from pseudo-locus to pseudo-locus, the 
+                    # "lowerboundSNP" moves upwards. 
+
+for (marker in seq(2,loci)){
+    distances2 =  SNPs[lowerboundSNP:length(SNPs)] - markers[marker] # Distances (bp) between current pseudo-locus and all SNPs 
+    above_ind = min(which(distances2>-0.1))+lowerboundSNP-1    # Which SNP (index) is immediately above the current pseudo-locus?
+    below_ind = above_ind - 1                                # And which is immediately below?
+    
+    above_inds[marker] = above_ind 
+    below_inds[marker] = below_ind
+    lowerboundSNP = below_ind                 # Reset lower bound SNP for next pseudo-locus
+    
+    above_ratio = (markers[marker] - SNPs[below_ind])/(SNPs[above_ind] - SNPs[below_ind])
+    below_ratio = 1-above_ratio    # How far is the pseudomarker between the SNP immediately below  
+                                                   # and immediately above it?
+     
+    cum_distance_grid[marker] =   below_ratio*cum_distances[below_ind] + above_ratio*cum_distances[above_ind]
+    
+                                # The cumulative map distance up till the current pseudo-locus, calculated by
+                                # interpolation from the cumulative map distance up till the SNP immediately below the
+                                # pseudo-locus and the SNP immediately above it. 
+    
+}
+
+cum_distance_grid <- cum_distance_grid[!is.na(cum_distance_grid)]
+loci2 <- length(cum_distance_grid)
+
+
+#actual calculation
+intra_sum = 0  # Will track the running total of the inra-chromosomal contribution to rbar as we move from locus
+                # pair to locus pair
+count_pairs = 0 # Will keep track of how many pairs we've counted---will eventually be loci x (loci-1)/2
+for (locus1 in seq(1,loci2-1)){
+    for (locus2 in seq(locus1+1,loci2)){
+        
+        intra_sum = intra_sum + 0.5*tanh(2*(cum_distance_grid[locus2] - cum_distance_grid[locus1])) # Applies Kosambi's 
+        # map function to the distance between pseudo-locus indexed "locus 1" and the pseudo-locus indexed "locus 2"
+        count_pairs = count_pairs+1;
+        
+    }
+}
+
+intra_contrib[i] = (intra_sum/count_pairs)*(this_chrom_length/sum(chr_length.df$chr_length))^2
+}
+```
+
+```{r plot_intrachr}
+#save the cat values
+intra_cat <- as.data.frame(c(1:52))
+colnames(intra_cat) <- "map"
+intra_cat$intra_contr <- intra_contrib
+
+write.table(intra_cat, "documentation/tables/intra_contrib_cat.txt")
+
+
+#run for swe, obs! save cat first
+intra_swe <- as.data.frame(c(1:29))
+colnames(intra_swe) <- "map"
+intra_swe$intra_contr <- intra_contrib
+
+write.table(intra_swe, "documentation/tables/intra_contrib_swe.txt")
+
+#total reshuffling
+round(inter_chr_rate(chr_length_swe.df$chr_length_assembly) + sum(intra_swe$intra_contr),4)
+
+round(inter_chr_rate(chr_length_cat.df$chr_length_assembly) + sum(intra_cat$intra_contr),4)
+
+#add sex chrinfo
+
+intra_swe$chr_type <- "Autosome"
+intra_swe[intra_swe$map==1 |intra_swe$map==6 | intra_swe$map==18,"chr_type"] <- "Z"
+
+intra_cat$chr_type <- "Autosome"
+intra_cat[intra_cat$map==1 |intra_cat$map==3 | intra_cat$map==4,"chr_type"] <- "Z"
+
+#add chr length
+intra_cat_s <- cbind(intra_cat, chr_length_cat.df)
+
+intra_swe_s <- cbind(intra_swe, chr_length_swe.df)
+
+intra.df <- rbind(intra_cat_s, intra_swe_s)
+
+#intra including prob of being on same chr
+intra_plot <- 
+  ggplot(intra.df, aes(chr_length_assembly/1000000, intra_contr)) +
+  geom_point(aes(fill=set,), shape=21, size=4) +
+  geom_point(aes(colour=chr_type), size = 2) +
+  scale_fill_manual(values = pop_colour,
+                    labels = c("Catalan", "Swedish"),
+                    name = "Population") +
+  scale_colour_manual(values = c("transparent", "white")) +
+  scale_y_continuous(name = "Intrachromosomal reshuff",
+                     labels = ~ format(.x, scientific = FALSE)) +
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  #annotation_custom(table_reshuff, xmin=20, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_male, theme=ttheme_minimal()), xmin=5, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_fem, theme=ttheme_minimal()), xmin=5, ymin = 0.0004) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        text = element_text(size = TXT_SIZE, colour="black"),
+        axis.text = element_text(size = TXT_SIZE, colour="black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(1.1,0.4)) +
+      guides(fill=guide_legend(order = 1), 
+         colour=guide_legend(order = 2,title = "Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))))
+
+#amount of reshuffling per chr, remove probability of being on the same chr
+intra.df$sum_length <- 
+sum(intra.df[intra.df$set=="ls_cat", "chr_length_assembly"])
+intra.df[intra.df$set=="ls_swe",]$sum_length <- 
+sum(intra.df[intra.df$set=="ls_swe", "chr_length_assembly"])
+  
+intra.df$intra_reshuff <- intra.df$intra_contr/(intra.df$chr_length_assembly/intra.df$sum_length)^2
+
+write.table(intra.df[,c("map", "set", "chr_type", "chr_length_assembly", "intra_reshuff", "intra_contr")], file = "documentation/tables/intra_reshuff.table", row.names = F, quote = F)
+
+
+ggplot(intra.df, aes(chr_length_assembly/1000000, intra_reshuff)) +
+  geom_point(aes(fill=set,), shape=21, size=4) +
+  geom_point(aes(colour=chr_type), size = 2) +
+  geom_smooth(size = PLOT_LINE, se=F, method = "lm", colour="black") +
+  scale_fill_manual(values = pop_colour,
+                    labels = c("Catalan", "Swedish"),
+                    name = "Population") +
+  scale_colour_manual(values = c("transparent", "white")) +
+  scale_y_continuous(name = "Intrachromosomal reshuff",
+                     labels = ~ format(.x, scientific = FALSE)) +
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  stat_cor(aes(label =paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+             label.y = 0.30, size = TXT_SIZE/2.8, digits= 2) +
+  #annotation_custom(table_reshuff, xmin=20, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_male, theme=ttheme_minimal()), xmin=5, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_fem, theme=ttheme_minimal()), xmin=5, ymin = 0.0004) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        text = element_text(size = TXT_SIZE, colour="black"),
+        axis.text = element_text(size = TXT_SIZE, colour="black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank()) +
+      guides(fill=guide_legend(order = 1), 
+         colour=guide_legend(order = 2,title = "Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))))
+
+ggsave("documentation/figures_ms/intra_reshuff_not_prop.pdf", height = 6, width = 10)
+ggsave("documentation/figures_ms/intra_reshuff_not_prop.png", height = 6, width = 10)
+
+```
+
+
+```{r plots_rr_fig2}
+#################################################
+####Fig 2
+################################################
+inter_chr.df <- read.table(file = "documentation/tables/inter_chr.txt")
+intra.df <- read.table(file = "documentation/tables/intra_reshuff.table", header = T)
+
+
+mytable <- cbind(Population=c("Catalan", "Swedish"), 
+                 "Intrachr (male)"=c(round(sum(intra_cat$intra_contr),4),
+                                     round(sum(intra_swe$intra_contr),4)), 
+                 "Interchr (male)"=c(round(inter_chr_rate(chr_length_cat.df$chr_length_assembly),4), 
+                                     round(inter_chr_rate(chr_length_swe.df$chr_length_assembly),4)), 
+
+                 "Total male"=c(round(inter_chr_rate(chr_length_cat.df$chr_length_assembly) + sum(intra_cat$intra_contr),4), 
+                                round(inter_chr_rate(chr_length_swe.df$chr_length_assembly) + sum(intra_swe$intra_contr),4)),
+
+                 "Interchr (female)"= c(round(inter_chr_rate(chr_length_cat_fem.df$chr_length_assembly),4), 
+                                        round(inter_chr_rate(chr_length_swe_fem.df$chr_length_assembly),4)), 
+                 "Sex average"=c(round((inter_chr_rate(chr_length_cat_fem.df$chr_length_assembly) + inter_chr_rate(chr_length_cat.df$chr_length_assembly))/2, 4), 
+                                 round((inter_chr_rate(chr_length_swe_fem.df$chr_length_assembly) + inter_chr_rate(chr_length_swe.df$chr_length_assembly))/2, 4)))
+
+write.table(mytable, file = "documentation/tables/summary_inter_intra_reshuff.table")
+
+mytable_t <- t(mytable)
+
+mytable.df <- data.frame(mytable_t[-1,1])
+mytable.df$Swedish <- as.vector(mytable_t[-1,2])
+colnames(mytable.df) <- c("Catalan", "Swedish")
+
+table_reshuff <- tableGrob(mytable, theme=ttheme_minimal())
+
+as.numeric(mytable[1,3])/as.numeric(mytable[1,2])
+
+
+intra_plot <- 
+  ggplot(intra.df, aes(chr_length_assembly/1000000, intra_contr)) +
+  geom_point(aes(fill=set,), shape=21, size=4) +
+  geom_point(aes(colour=chr_type), size = 2) +
+  scale_fill_manual(values = pop_colour,
+                    labels = c("Catalan", "Swedish"),
+                    name = "Population") +
+  scale_colour_manual(values = c("transparent", "white")) +
+  scale_y_continuous(name = "Intrachromosomal contribution",
+                     labels = ~ format(.x, scientific = FALSE)) +
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  #annotation_custom(table_reshuff, xmin=20, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_male, theme=ttheme_minimal()), xmin=5, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_fem, theme=ttheme_minimal()), xmin=5, ymin = 0.0004) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        text = element_text(size = TXT_SIZE, colour="black"),
+        axis.text = element_text(size = TXT_SIZE, colour="black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(1.1,0.4)) +
+      guides(fill=guide_legend(order = 1), 
+         colour=guide_legend(order = 2,title = "Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))))
+
+intra_reshuff_plot <- 
+ggplot(intra.df, aes(chr_length_assembly/1000000, intra_reshuff)) +
+  geom_point(aes(fill=set,), shape=21, size=4) +
+  geom_point(aes(colour=chr_type), size = 2) +
+  geom_smooth(size = PLOT_LINE, se=F, method = "lm", colour="black") +
+  scale_fill_manual(values = pop_colour,
+                    labels = c("Catalan", "Swedish"),
+                    name = "Population") +
+  scale_colour_manual(values = c("transparent", "white")) +
+  scale_y_continuous(name = "Intrachromosomal reshuffling",
+                     labels = ~ format(.x, scientific = FALSE)) +
+  scale_x_continuous(name = "Chromosome length (Mb)") +
+  stat_cor(aes(label =paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+             label.y = 0.30, size = TXT_SIZE/2.8, digits= 2) +
+  #annotation_custom(table_reshuff, xmin=20, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_male, theme=ttheme_minimal()), xmin=5, ymin = 0.0006) +
+  #annotation_custom(tableGrob(mytable_fem, theme=ttheme_minimal()), xmin=5, ymin = 0.0004) +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour = "black"),
+        text = element_text(size = TXT_SIZE, colour="black"),
+        axis.text = element_text(size = TXT_SIZE, colour="black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour = "black"),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.title = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(1.1,0.4)) +
+      guides(fill=guide_legend(order = 1), 
+         colour=guide_legend(order = 2,title = "Chromosome type", override.aes=list(shape=21, size = 4, colour="black", fill=c("light grey", "white"))))
+
+
+inter_plot <- 
+ggplot(inter_chr.df, aes(nr_chr, prob)) +
+  geom_point(data=sim_inter_chr, aes(nr_chr, prob), shape=21, stroke=1) +
+  geom_hline(aes(yintercept=prob, colour = set, linetype = sex), size=1, show.legend = F) +
+  geom_vline(aes(xintercept = nr_chr, colour = set, linetype = sex), size = 1, show.legend = F) +
+  geom_line(aes(colour=set, linetype=sex), size=0.8) +
+  xlab(label = "Number of independently assorting chromosomes") +
+  scale_y_continuous(limits = c(0.2,0.5),
+                 name = "Probability of reshuffling") +
+  scale_x_continuous(limits = c(0,70)) +
+  scale_colour_manual(values = pop_colour, 
+                      name="Population") +
+  scale_linetype_manual(values = c("solid", "twodash"),
+                        name="Gender") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = LINE_SIZE, colour="black"),
+        text = element_text(size = TXT_SIZE, colour="black"),
+        axis.text = element_text(size = TXT_SIZE, colour="black"),
+        axis.ticks = element_line(size = LINE_SIZE, colour="black"),
+        legend.text = element_text(size = TXT_SIZE),
+        legend.key = element_blank(),
+        legend.position = c(1,0.4)) +
+        guides(colour=guide_legend(order = 1, keywidth = 2, override.aes=list(size = 1.5)), 
+         linetype=guide_legend(order = 2, keywidth = 2, override.aes=list(size = 1.5)))
+
+
+#reshuff_plot <- ggarrange(inter_plot, intra_plot, tableGrob(mytable.df), ncol = 3, widths = c(2,2,1), labels = c("A", "B", "C"))
+reshuff_plot <- 
+  ggarrange(inter_plot + theme(plot.margin = margin(0.2,2,0.2,0.3, "cm")), intra_plot + theme(plot.margin = margin(0.2,5,0.2,1, "cm")), widths = c(1,1.2), ncol = 2, labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h")
+
+ggsave(plot=reshuff_plot, "documentation/figures_ms/reshuff_plot.pdf", device = "pdf", height = 5, width = 15)
+ggsave(plot=reshuff_plot, "documentation/figures_ms/reshuff_plot.png", device = "png", height = 5, width = 15)
+
+reshuff_plot_2 <- 
+  ggarrange(inter_plot + theme(plot.margin = margin(0.2,2,0.2,0.3, "cm")), intra_reshuff_plot + theme(plot.margin = margin(0.2,5,0.2,1, "cm")), widths = c(1,1.2), ncol = 2, labels = c("a", "b"), font.label = list(size=TXT_SIZE), align = "h")
+
+ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.pdf", height = 5, width = 15)
+ggsave(plot=reshuff_plot_2, "documentation/figures_ms_rev/reshuff_plot_v2.png", height = 5, width = 15)
+
+```
+
+
+
+
+
+
+##Result pixy
+
+
+```{r long_format}
+pixy_to_long <- function(pixy_files){
+
+  pixy_df <- list()
+
+  for(i in 1:length(pixy_files)){
+
+    stat_file_type <- gsub(".*_|.txt", "", pixy_files[i])
+
+    if(stat_file_type == "pi"){
+
+      df <- read_delim(pixy_files[i], delim = "\t")
+      df <- df %>%
+        gather(-pop, -window_pos_1, -window_pos_2, -chromosome,
+               key = "statistic", value = "value") %>%
+        rename(pop1 = pop) %>%
+        mutate(pop2 = NA)
+
+      pixy_df[[i]] <- df
+
+
+    } else{
+
+      df <- read_delim(pixy_files[i], delim = "\t")
+      df <- df %>%
+        gather(-pop1, -pop2, -window_pos_1, -window_pos_2, -chromosome,
+               key = "statistic", value = "value")
+      pixy_df[[i]] <- df
+
+    }
+
+  }
+
+  bind_rows(pixy_df) %>%
+    arrange(pop1, pop2, chromosome, window_pos_1, statistic)
+
+}
+
+pixy_to_long_sites <- function(pixy_files){
+
+  pixy_df <- list()
+
+  for(i in 1:length(pixy_files)){
+
+    stat_file_type <- gsub(".*_|.txt", "", pixy_files[i])
+
+    if(stat_file_type == "pi"){
+
+      df <- read_delim(pixy_files[i], delim = "\t")
+      df <- df %>%
+        gather(-pop, -window_pos_1, -window_pos_2, -chromosome,
+               key = "statistic", value = "value")
+
+      df$class <- gsub("_pi.txt", "", pixy_files[i])
+      df$class <- gsub("/Users/karin/Documents/GitHub/Leptidea_rec_rate_div/02_diversity/03_pixy/output_sites/cat_", "", df$class)
+      df$class <- gsub("/Users/karin/Documents/GitHub/Leptidea_rec_rate_div/02_diversity/03_pixy/output_sites/swe_", "", df$class)
+
+      pixy_df[[i]] <- df
+
+
+    } else{
+
+
+    }
+
+  }
+
+  bind_rows(pixy_df) %>%
+    arrange(pop, chromosome, window_pos_1, statistic)
+
+}
+
+
+###
+pixy_folder <- "~/Documents/GitHub/Leptidea_rec_rate_div/02_diversity/03_pixy/output_sites"
+pixy_files <- list.files(pixy_folder, full.names = TRUE)
+pixy_df <- pixy_to_long_sites(pixy_files)
+
+#chromosome as number
+pixy_df$chr_nr <- as.numeric(sub("HiC_scaffold_", "", pixy_df$chromosome))
+#pixy_df$chromosome <- sub("HiC_scaffold_", "chr_", pixy_df$chromosome)
+pixy_df$chromosome <- factor(pixy_df$chromosome, levels = stringr::str_sort(unique(pixy_df$chromosome), numeric = TRUE))
+
+
+write.table(pixy_df, file = "~/Documents/GitHub/Leptidea_rec_rate_div/documentation/tables/pixy_df_sites.table")
+
+pixy_df <- read.table(file = "~/Documents/GitHub/Leptidea_rec_rate_div/documentation/tables/pixy_df_sites.table", header = T)
+
+```
+
+```{r overall_stats}
+#pi for the different classes in each pop
+pixy_df %>%
+  filter(statistic %in% c("count_diffs", "count_comparisons"), class %in% c("0_fold", "4_fold", "intergenic", "intron")) %>%
+  group_by(pop, statistic, class) %>%
+  dplyr::summarise(sum_pop=sum(value, na.rm = T)) %>%
+  group_by(pop, class) %>%
+  dplyr::mutate(pi_pop=sum_pop[statistic=="count_diffs"]/sum_pop[statistic=="count_comparisons"]) %>%
+  select(pop, class, pi_pop) %>%
+  unique() %>%
+  pivot_wider(names_from = class, values_from = pi_pop) %>%
+  mutate(pnps=`0_fold`/`4_fold`) %>%
+  t(.) %>%
+  write.table(., file = "documentation/tables/pi_pop.table")
+
+#pi for the different classes in each pop per chr (suppl)
+pi_chr.df <- 
+pixy_df %>%
+  filter(statistic %in% c("count_diffs", "count_comparisons"), class %in% c("0_fold", "4_fold", "intergenic", "intron")) %>%
+  group_by(pop, chromosome, statistic, class) %>%
+  dplyr::summarise(sum_chr=sum(value, na.rm = T)) %>%
+  group_by(pop, chromosome, class) %>%
+  dplyr::mutate(pi_chr=sum_chr[statistic=="count_diffs"]/sum_chr[statistic=="count_comparisons"]) %>%
+  select(pop, chromosome, class, pi_chr) %>%
+  unique() %>%
+  pivot_wider(names_from = class, values_from = pi_chr) %>%
+  mutate(pnps=`0_fold`/`4_fold`) %>%
+
+write.table(pi_chr.df, file = "documentation/tables/pi_chr.table")
+
+#pi_chr.df <- read.table(file = "documentation/tables/pi_chr.table")
+
+##pi chr range per pop 
+pi_chr.df %>%
+    pivot_longer(cols = 3:7) %>%
+  group_by(pop, name) %>%
+  dplyr::summarize(round(min(value, na.rm = T), 5), round(max(value, na.rm = T),5)) %>%
+  write.table("documentation/tables/chr_range_pi.table", quote = F, row.names = F)
+
+#test diff between pop
+capture.output(
+wilcox.test(pi_chr.df[pi_chr.df$pop=="cat",]$`0_fold`, pi_chr.df[pi_chr.df$pop=="swe",]$`0_fold`), 
+wilcox.test(pi_chr.df[pi_chr.df$pop=="cat",]$`4_fold`, pi_chr.df[pi_chr.df$pop=="swe",]$`4_fold`),  
+wilcox.test(pi_chr.df[pi_chr.df$pop=="cat",]$`intergenic`, pi_chr.df[pi_chr.df$pop=="swe",]$`intergenic`),  
+wilcox.test(pi_chr.df[pi_chr.df$pop=="cat",]$`intron`, pi_chr.df[pi_chr.df$pop=="swe",]$`intron`), 
+wilcox.test(pi_chr.df[pi_chr.df$pop=="cat",]$`pnps`, pi_chr.df[pi_chr.df$pop=="swe",]$`pnps`),
+append = T, file = "documentation/tables/wilcox_chr_pop.txt")
+
+
+"add chr length"
+cat_length <- read.table("01_data/chr_length_cat_HiC.txt")
+cat_length$pop <- "cat"
+swe_length <- read.table("01_data/chr_length_swe_HiC.txt")
+swe_length$pop <- "swe"
+
+length_prel <- rbind(cat_length, swe_length)
+colnames(length_prel) <- c("chromosome", "chr_length", "pop")
+
+left_join(pi_chr.df, length_prel) %>%
+    pivot_longer(cols = 3:7) %>%
+levels(.$name)
+
+
+#no Z
+pi_chr.df$chr_type <- "Autosome"
+pi_chr.df[pi_chr.df$chromosome=="HiC_scaffold_1",]$chr_type <- "Z"
+pi_chr.df[pi_chr.df$pop=="swe" & pi_chr.df$chromosome=="HiC_scaffold_6",]$chr_type <- "Z"
+pi_chr.df[pi_chr.df$pop=="swe" & pi_chr.df$chromosome=="HiC_scaffold_18",]$chr_type <- "Z"
+
+pi_chr.df[pi_chr.df$pop=="cat" & pi_chr.df$chromosome=="HiC_scaffold_3",]$chr_type <- "Z"
+pi_chr.df[pi_chr.df$pop=="cat" & pi_chr.df$chromosome=="HiC_scaffold_4",]$chr_type <- "Z"
+
+
+pi_chr_length.df <- 
+left_join(pi_chr.df, length_prel) %>%
+    pivot_longer(cols = 3:7)
+  
+pop_names = c(cat = "Catalan", swe = "Swedish")
+
+pi_chr_length.df %>%
+ggplot(aes(chr_length/1000000, value))+
+  geom_point(aes(colour=chr_type), size = 2) +
+  #stat_ma_eq(aes(label = paste(after_stat(rr.label),
+   #                              after_stat(p.value.label), "OLS", nperm = 50, sep = "*\", \"*"))) +
+  stat_cor(data=pi_chr_length.df[pi_chr_length.df$chr_type!="Z",], aes(chr_length/1000000, value),method="spearman", col="black", label.y.npc = 0.1, label.x.npc = "left", cor.coef.name = "rho", size = TXT_SIZE/2.8) +
+  stat_cor(method="spearman",label.y.npc = 0.25, label.x.npc = "left", cor.coef.name = "rho", colour = "#855C75", size = TXT_SIZE/2.8) +
+  facet_grid(name~pop, scales="free_y", labeller = labeller(pop = c(cat = "Catalan",
+                             swe = "Swedish"), 
+                                       name = c(`0_fold` = "0-fold",
+                             `4_fold` = "4-fold",
+                             intergenic = "Intergenic",
+                             intron = "Intron", 
+                             pnps="0-fold/4-fold"))) +
+  scale_y_continuous(name=expression(pi), 
+                     limits = c(0,NA)) +
+  scale_x_continuous(name="Chromosome length (Mb)") +
+  #expand_limits(y = 0) +
+  scale_color_manual(values = c( "grey", "#855C75"),
+                     name = "Chromosome type") +
+  theme_bw() +
+    theme(strip.background = element_blank(),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          strip.text.y = element_text(angle = 0, hjust = 0),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black", angle = 0, vjust = 0.5),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(), 
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"))
+
+ggsave("documentation/figures_ms_rev/pi_vs_chr_length.pdf", height = 12, width = 12)  
+ggsave("documentation/figures_ms_rev/pi_vs_chr_length.png", height = 12, width = 12)  
+
+
+t.test(data.frame(pi_chr_length.df[pi_chr_length.df$pop=="cat" & pi_chr_length.df$chr_type=="Z" & pi_chr_length.df$name=="intergenic", "value"])$value, data.frame(pi_chr_length.df[pi_chr_length.df$pop=="cat" & pi_chr_length.df$chr_type=="Autosome" & pi_chr_length.df$name=="intergenic", "value"])$value)
+
+t.test(data.frame(pi_chr_length.df[pi_chr_length.df$pop=="swe" & pi_chr_length.df$chr_type=="Z" & pi_chr_length.df$name=="intergenic", "value"])$value, data.frame(pi_chr_length.df[pi_chr_length.df$pop=="swe" & pi_chr_length.df$chr_type=="Autosome" & pi_chr_length.df$name=="intergenic", "value"])$value)
+
+wilcox.test(data.frame(pi_chr_length.df[pi_chr_length.df$pop=="cat" & pi_chr_length.df$chr_type=="Z" & pi_chr_length.df$name=="intron", "value"])$value, data.frame(pi_chr_length.df[pi_chr_length.df$pop=="cat" & pi_chr_length.df$chr_type=="Autosome" & pi_chr_length.df$name=="intron", "value"])$value)
+
+wilcox.test(data.frame(pi_chr_length.df[pi_chr_length.df$pop=="swe" & pi_chr_length.df$chr_type=="Z" & pi_chr_length.df$name=="intron", "value"])$value, data.frame(pi_chr_length.df[pi_chr_length.df$pop=="swe" & pi_chr_length.df$chr_type=="Autosome" & pi_chr_length.df$name=="intron", "value"])$value)
+
+
+
+```
+
+
+
+
+
+
+```{r pixy_wide}
+pixy_wide <-   
+left_join(pixy_df, length_prel) %>% 
+  filter(class %in% c("intergenic", "intron", "0_fold", "4_fold")) %>%
+  filter(statistic %in% c("count_diffs", "count_comparisons")) %>% 
+  dplyr::mutate(MB2_bin = cut(window_pos_1, breaks = seq(0,max(chr_length),2000000))) %>%
+  filter(!is.na(MB2_bin)) %>%
+  group_by(pop, chromosome, class, MB2_bin, statistic, chr_length) %>%
+  dplyr::summarise(sum(value, na.rm = T)) %>%
+    pivot_wider(names_from = c("statistic"), values_from = "sum(value, na.rm = T)") %>%
+    dplyr::mutate(pi=count_diffs/count_comparisons) %>%
+    dplyr::mutate(begin=as.integer(stringr::str_split(gsub(pattern='\\(|\\]', replacement = "", x=MB2_bin), ",", simplify = TRUE)[,1]), 
+         end=as.integer(stringr::str_split(gsub(pattern='\\(|\\]', replacement = "", x=MB2_bin), ",", simplify = TRUE)[,2]))  %>%
+  dplyr::mutate(end=replace(end, end>=chr_length, chr_length))
+
+pixy_wide$begin <- as.integer(pixy_wide$begin + 1)
+
+pixy_wide$set <- pixy_wide$pop
+pixy_wide$pop <- "LSSWE"
+pixy_wide[pixy_wide$set=="cat",]$pop <- "LSSPA"
+
+pixy_wide$chrom <- as.factor(paste(pixy_wide$chromosome, pixy_wide$pop, sep = "_"))
+
+rec_rate_anc_bin$pop <- as.factor(rec_rate_anc_bin$pop)
+rec_rate_anc_bin$chrom <- as.factor(rec_rate_anc_bin$chrom)
+pixy_wide$pop <- as.factor(pixy_wide$pop)
+
+
+anc_df_2Mb_wind <- as.data.frame(left_join(pixy_wide,rec_rate_anc_bin, by=c("pop", "chrom", "MB2_bin")))
+summary(anc_df_2Mb_wind)
+str(anc_df_2Mb_wind)
+
+#check
+anc_df_2Mb_wind[anc_df_2Mb_wind$begin.x == anc_df_2Mb_wind$begin.y,]
+
+anc_df_2Mb_wind$begin <- anc_df_2Mb_wind$begin.x
+anc_df_2Mb_wind$end <- anc_df_2Mb_wind$end.x
+
+write.table(anc_df_2Mb_wind, "documentation/tables/anc_df_2Mb.table")
+
+anc_df_2Mb_wind %>%
+  group_by(pop) %>%
+  ggplot() +
+  geom_histogram(aes(rr_wind), bins=100) +
+  facet_wrap(~pop)
+
+anc_df_2Mb_wind %>%
+  group_by(pop) %>%
+  dplyr::summarize(median(rr_wind, na.rm = T), sd(rr_wind, na.rm = T))
+#can only look at distribution of 2mb window within anc unit or per pop, cant use delta on 2mb because do not have chain for that
+```
+
+
+```{r Fig_3_plots_pi}
+
+anc_df_2Mb_wind <- read.table(file = "documentation/tables/anc_df_2Mb.table")
+
+PLOT_LINE=1
+
+pi_reg_folded <- 
+anc_df_2Mb_wind %>%
+  ggplot(aes(sqrt((((begin + ((end - begin)/2))/chr_length_assembly)-0.5)^2),pi)) +
+  geom_point(alpha=0.25, colour = "grey") +
+  geom_smooth(aes(colour=pop, linetype=class), method = "loess", se=F, size= PLOT_LINE) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_linetype_manual(name="Class",
+                          values = c("solid", "dashed", "dotted", "twodash"),
+                      labels = c(expression(pi[0]), expression(pi[4]), expression(pi[Intergenic]), expression(pi[Intron]))) +
+  #facet_wrap(~pop, labeller = pop_labeller, nrow = 2) +
+  scale_x_continuous(name = "Relative position") +
+  scale_y_continuous(name = expression(pi),
+                     limits = c(0,0.02)) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0) +
+        guides(colour=guide_legend(order = 1, keywidth = 2), 
+         linetype=guide_legend(order = 2, keywidth = 3, override.aes=list(size = PLOT_LINE, colour="black")))
+
+
+
+anc_df_2Mb_wind %>%
+  ggplot()+
+  geom_histogram(aes(rr_wind, bins = 100)) +
+  facet_wrap(~class)
+
+labeller = labeller(pop = c(LSSPA = "Catalan",
+                             LSSWE = "Swedish"), 
+                                       class = c(`0_fold` = expression(pi[0]),
+                             `4_fold` = expression(pi[4]),
+                             intergenic = expression(pi[intergenic]),
+                             intron = expression(pi[intron]),
+                             pnps = expression(pi[0]/pi[4])))
+
+pop_labeller <- as_labeller(c(LSSPA = "Catalan",
+                             LSSWE = "Swedish"),
+                             default = label_parsed)
+
+class_labeller <- as_labeller(c(`0_fold` = expression(pi[0]),
+                             `4_fold` = expression(pi[4]),
+                             intergenic = expression(pi[intergenic]),
+                             intron = expression(pi[intron]),
+                             pnps = expression(pi[0]/pi[4])),
+                             default = label_parsed)
+
+rec_vs_pi <-   
+anc_df_2Mb_wind %>%
+  ggplot(aes(rr_wind, pi)) +
+  geom_point(colour="grey", alpha = 0.3) +
+  geom_smooth(colour="black", se=F, size = PLOT_LINE) +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.x=0.5) +
+  stat_ma_eq(data=anc_df_2Mb_wind[anc_df_2Mb_wind$rr_wind <= 2 & !is.na(anc_df_2Mb_wind$rr_wind),], mapping = aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.y=0.9, label.x=0.5, colour="blue") +
+  stat_ma_eq(data=anc_df_2Mb_wind[anc_df_2Mb_wind$rr_wind >= 2 & !is.na(anc_df_2Mb_wind$rr_wind),], mapping = aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.y=0.85, label.x=0.5, colour="dark grey") +
+  facet_grid(pop~class, labeller = labeller(pop = c(LSSPA = "Catalan",
+                             LSSWE = "Swedish"), 
+                                       class = c(`0_fold` = "0-fold",
+                             `4_fold` = "4-fold",
+                             intergenic = "intergenic",
+                             intron = "intron"))
+) +
+  scale_x_continuous(name = "Recombination rate (cM/Mb)",
+                     limits = c(0,16)) +
+  scale_y_continuous(name = expression(pi),
+                     limits = c(0,0.025)) +
+  theme_bw() +
+    theme(strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black", angle = 0, vjust = 0.5),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0) 
+
+
+
+ggsave(rec_vs_pi, filename = "documentation/figures_ms_rev/rec_vs_pi_2Mb_suppl.pdf", height = 8, width = 14 )
+ggsave(rec_vs_pi, filename = "documentation/figures_ms_rev/rec_vs_pi_2Mb_suppl.png", height = 8, width = 14 )
+
+rec_vs_pi_all <-   
+anc_df_2Mb_wind %>%
+  ggplot(aes(rr_wind, pi)) +
+  geom_point(colour="grey", alpha = 0.25) +
+  geom_smooth(aes(colour=pop, linetype=class), se=F, size = PLOT_LINE) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_linetype_manual(name="Class",
+                          values = c("solid", "dashed", "dotted", "twodash"),
+                      labels = c(expression(pi[0]), expression(pi[4]), expression(pi[Intergenic]), expression(pi[Intron]))) +
+  scale_x_continuous(name = "Recombination rate (cM/Mb)",
+                     limits = c(0,16)) +
+  scale_y_continuous(name = expression(pi),
+                     limits = c(0,0.020)) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0) +
+        guides(colour=guide_legend(order = 1, keywidth = 2, override.aes=list(size = PLOT_LINE)), 
+         linetype=guide_legend(order = 2, keywidth = 3, override.aes=list(size = PLOT_LINE, colour="black")))
+
+ggsave(plot=ggarrange(pi_reg_folded, rec_vs_pi_all, common.legend = T, legend = "right", labels = c("a", "b")),
+       filename = "documentation/figures_ms/pi_pos_rr.pdf", device = "pdf", height = 6, width = 12)
+ggsave(plot=ggarrange(pi_reg_folded, rec_vs_pi_all, common.legend = T, legend = "right", labels = c("a", "b")),
+       filename = "documentation/figures_ms/pi_pos_rr.png", device = "png", height = 6, width = 12)
+
+
+
+```
+
+```{r pnps}
+
+#pnps folded
+pnps_reg_folded <- 
+anc_df_2Mb_wind %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  ggplot(aes(sqrt((((begin + ((end - begin)/2))/chr_length_assembly)-0.5)^2),pn_ps)) +
+  geom_point(alpha=0.25, colour = "grey") +
+  geom_smooth(aes(colour=pop), method = "loess", se=F, size= PLOT_LINE) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_x_continuous(name = "Relative position") +
+  scale_y_continuous(name = expression(pi[0]/pi[4]),
+                     limits = c(0,1.5)) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black", vjust = -1),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+
+pnps_rec_rate <- 
+anc_df_2Mb_wind %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  ggplot(aes(rr_wind, pn_ps)) +
+  geom_point(colour = "grey", alpha=0.25) +
+  geom_smooth(aes(colour=pop), method="loess", se=F, size=PLOT_LINE) +
+  #stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T) +
+  scale_colour_manual(values = pop_colour,
+                      name = "Population",
+                      labels = c("Catalan", "Swedish")) +
+  scale_y_continuous(name = expression(pi[0]/pi[4]), 
+                     limits = c(0,1.5)) +
+  scale_x_continuous(name = "Recombination rate (cM/Mb)",
+                     limits = c(0,15)) +
+          theme(panel.background = element_blank(),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black", vjust = -1),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text = element_text(size = TXT_SIZE),
+          legend.title = element_text(size = TXT_SIZE),
+          legend.key=element_blank()) +
+        guides(colour=guide_legend(order = 1, keywidth = 2))
+
+#per pop with stats
+anc_df_2Mb_wind_2cM <- 
+anc_df_2Mb_wind[anc_df_2Mb_wind$rr_wind <= 2,] %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  mutate(pop=as.factor(pop))
+
+anc_df_2Mb_wind_above_2cM <- 
+anc_df_2Mb_wind[anc_df_2Mb_wind$rr_wind >= 2,] %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  mutate(pop=as.factor(pop))
+
+pnps_rec_rate_stats <- 
+anc_df_2Mb_wind %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  mutate(pop=as.factor(pop)) %>%
+  ggplot(aes(rr_wind, pn_ps)) +
+  geom_point(colour = "grey", alpha=0.25) +
+  geom_smooth(colour="black", method="loess", se=F, size=PLOT_LINE) +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.x=0.5) +
+  stat_ma_eq(data=anc_df_2Mb_wind_2cM, aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.y=0.9, label.x=0.5, colour="blue") +
+  stat_ma_eq(data=anc_df_2Mb_wind_above_2cM, aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, label.y=0.85, label.x=0.5, colour="dark grey") +
+  scale_y_continuous(name = expression(pi[0]/pi[4]), 
+                     limits = c(0,1.5)) +
+  scale_x_continuous(name = "Recombination rate (cM/Mb)",
+                     limits = c(0,15)) +
+  facet_wrap(~pop, labeller = pop_labeller, ncol = 1) +
+  theme_bw() +
+          theme(axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black", vjust = -1),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text = element_text(size = TXT_SIZE, colour = "black"),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text = element_text(size = TXT_SIZE),
+          legend.title = element_text(size = TXT_SIZE),
+          legend.key=element_blank()) +
+        guides(colour=guide_legend(order = 1, keywidth = 2))
+
+ggsave(plot = pnps_rec_rate_stats, "documentation/figures_ms_rev/pnps_vs_rr_pop_stats_suppl.pdf", height = 8, width = 4)
+ggsave(plot = pnps_rec_rate_stats, "documentation/figures_ms_rev/pnps_vs_rr_pop_stats_suppl.png", height = 8, width = 4)
+
+ggsave(ggarrange(rec_vs_pi,pnps_rec_rate_stats, labels = c("a)", "b)"), align = "h", widths = c(3.5,1)),
+       filename = "documentation/figures_ms_rev/pi_pn_ps_vs_rec.pdf", height = 8, width = 16)
+ggsave(ggarrange(rec_vs_pi,pnps_rec_rate_stats, labels = c("a)", "b)"), align = "h", widths = c(3.5,1)),
+       filename = "documentation/figures_ms_rev/pi_pn_ps_vs_rec.png", height = 8, width = 16)
+
+
+
+p1 <- pi_reg_folded + rremove("x.title") + theme(legend.position = "none")
+p2 <- rec_vs_pi_all + rremove("x.title") 
+p3 <- pnps_reg_folded + theme(legend.position = "none")
+p4 <- pnps_rec_rate
+
+
+
+ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(face ="bold")),
+       filename = "documentation/figures_ms/pn_ps_vs_rec.pdf", device = "pdf", height = 6, width = 10)
+
+ggsave(plot=p1 + p2 + p3 + p4 + plot_annotation(tag_levels = 'a') & theme(plot.tag = element_text(face ="bold")),
+       filename = "documentation/figures_ms/pn_ps_vs_rec.png", device = "png", height = 6, width = 10)
+
+
+capture.output(file = "documentation/tables/pnps_vs_rec.txt",
+  anc_df_2Mb_wind %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  lmodel2(formula = pn_ps~rr_wind, nperm = 1000))
+
+
+#per pop with stats, less than 2 cM/Mb
+anc_df_2Mb_wind[anc_df_2Mb_wind$rr_wind <= 2,] %>%
+  filter(class %in% c("0_fold", "4_fold") ) %>%
+  group_by(pop, chrom, MB2_bin, anc_chr_unit) %>%
+  dplyr::mutate(pi, pn_ps=pi[class=="0_fold"]/pi[class=="4_fold"]) %>%
+  mutate(pop=as.factor(pop)) %>%
+  ggplot(aes(rr_wind, pn_ps)) +
+  geom_point(colour = "grey", alpha=0.25) +
+  geom_smooth(colour="black", method="loess", se=F, size=PLOT_LINE) +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T) +
+  scale_y_continuous(name = expression(pi[0]/pi[4])) +
+  scale_x_continuous(name = "Recombination rate (cM/Mb)") +
+  facet_wrap(~pop, labeller = pop_labeller) +
+          theme(panel.background = element_blank(),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black", vjust = -1),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text = element_text(size = TXT_SIZE, colour = "black"),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text = element_text(size = TXT_SIZE),
+          legend.title = element_text(size = TXT_SIZE),
+          legend.key=element_blank()) +
+        guides(colour=guide_legend(order = 1, keywidth = 2))
+
+
+
+anc_df_2Mb_wind %>%
+  mutate( rrate_bins = cut( rr_wind, breaks = quantile(anc_df_2Mb_wind$rr_wind, na.rm = T))) %>%
+  ggplot(aes(rrate_bins, pi)) +
+  geom_boxplot(aes(fill=pop)) +
+  facet_wrap(~class)
+
+```
+
+
+```{r pixy_delta}
+#for anc chr units
+anc_df <- 
+anc_df_2Mb_wind %>%
+  group_by(pop, anc_chr_unit, type, class) %>%
+  summarise(count_diffs=sum(count_diffs), count_comparisons=sum(count_comparisons)) %>%
+  mutate(anc_pi=count_diffs/count_comparisons)
+
+
+anc_df <- left_join(anc_df,rec_anc_mean)
+
+anc_df <- 
+anc_df %>%
+  group_by(anc_chr_unit, class) %>%
+  mutate(anc_pi, ratio_pi = anc_pi[pop == "LSSPA"]/anc_pi[pop == "LSSWE"])
+
+anc_df_pnps <- 
+anc_df %>%
+    filter(class %in% c("0_fold", "4_fold") , !is.na(anc_chr_unit)) %>%
+  group_by(pop, anc_chr_unit) %>%
+  dplyr::mutate(anc_pi, anc_pn_ps=anc_pi[class=="0_fold"]/anc_pi[class=="4_fold"]) %>%
+  group_by(anc_chr_unit,class) %>%
+  dplyr::mutate(anc_pn_ps, ratio_pn_ps=anc_pn_ps[pop=="LSSPA"]/anc_pn_ps[pop=="LSSWE"]) %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) 
+
+anc_df_distinct <- 
+  anc_df %>%
+  dplyr::distinct(anc_chr_unit, type, class, ratio_rr, ratio_pi)
+
+#both random factors so need type 2 regression"
+
+lmod2_0_fold <- 
+anc_df_distinct %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown"), class == "0_fold") %>%
+    lmodel2(formula = ratio_pi~ratio_rr, nperm = 1000)
+
+lmod2_4_fold <- 
+anc_df_distinct %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown"), class == "4_fold") %>%
+    lmodel2(formula = ratio_pi~ratio_rr, nperm = 1000)
+
+lmod2_intergenic <- 
+anc_df_distinct %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown"), class == "intergenic") %>%
+    lmodel2(formula = ratio_pi~ratio_rr, nperm = 1000)
+
+lmod2_intron <- 
+anc_df_distinct %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown"), class == "intron") %>%
+    lmodel2(formula = ratio_pi~ratio_rr, nperm = 1000)
+
+
+lmod2_pnps <- 
+anc_df %>%
+    filter(class %in% c("0_fold", "4_fold") , !is.na(anc_chr_unit)) %>%
+  group_by(pop, anc_chr_unit) %>%
+  dplyr::mutate(anc_pi, anc_pn_ps=anc_pi[class=="0_fold"]/anc_pi[class=="4_fold"]) %>%
+  group_by(anc_chr_unit,class) %>%
+  dplyr::mutate(anc_pn_ps, ratio_pn_ps=anc_pn_ps[pop=="LSSPA"]/anc_pn_ps[pop=="LSSWE"]) %>%
+  filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  lmodel2(formula = ratio_pn_ps~ratio_rr, nperm = 1000)
+
+#print output
+capture.output(lmod2_0_fold, lmod2_4_fold, lmod2_intergenic, lmod2_intron, lmod2_pnps,
+  file = "documentation/tables/result_lmodel2.txt")
+
+```
+
+
+```{r pixy_delta_plots}
+#adjust type colour
+show_col(c("#736F4C", adjustcolor("#736F4C",offset = c(0.1, 0.1, 0.1, 0))))
+
+col_type <- c(adjustcolor("#526A83",offset = c(0.15,0.15, 0.15, 0)),
+              "#D9AF6B", 
+              adjustcolor("#625377",offset = c(0.3, 0.3, 0.3, 0)), 
+              adjustcolor("#736F4C",offset = c(0.05, 0.05, 0.05, 0)) )
+
+#ratio all units except Z and 0
+anc_df_distinct %>%
+  filter(!type %in% c("Z",0)) %>%
+  ggplot(aes(ratio_rr, ratio_pi)) +
+  geom_point(aes(fill=class), shape=21, size=4, alpha=0.8, show.legend = FALSE) +
+  #geom_smooth(aes(colour=class), size = PLOT_LINE, method = "lm", linetype="dashed", se=F) +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T) +
+  #geom_smooth(data=anc_df_intergenic_filtered, aes(ratio_rr, ratio_pi, colour=class), size = PLOT_LINE, method = "lm", linetype="solid", se=F) +
+  # geom_text(data=lmod2_labels[lmod2_labels$class!="pn_ps",], aes(x=2.2, y=c(1.917, 1.85, 1.784, 1.718), label = paste0("R\U00B2 = ", round(res_lmod2, 3), ", p-value =", round(pval, 3)), colour=class), size=TXT_SIZE/2.8, show.legend = FALSE) +
+  scale_colour_manual(name="Class",
+                      values=col_class, 
+                      labels = c(expression(pi[0]), expression(pi[4]), expression(pi[Intergenic]), expression(pi[Intron]))) +
+  scale_fill_manual(values = col_class) +
+  scale_y_continuous(name = expression(Ratio[pi])) +
+  scale_x_continuous(name = expression(Ratio[rec]),
+                     limits = c(0,4)) +
+  facet_wrap(~class) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+
+ggsave("documentation/figures_ms/ratio_filter_Z_suppl.pdf", height =12, width = 16)
+ggsave("documentation/figures_ms/ratio_filter_Z_suppl.png", height =12, width = 16)
+
+
+#ratio_intergenic <- 
+anc_df_distinct %>%
+  dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  dplyr::filter(class=="intergenic") %>%
+ggplot(aes(ratio_rr, ratio_pi)) +
+  geom_point(aes(fill=type), shape=21, size=4, alpha=0.8) +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T, size=TXT_SIZE/2.8) +
+  geom_smooth(size = PLOT_LINE, method = "lm", linetype="solid", se=F, col="black" ) +
+  scale_fill_manual(values = col_type,
+                      name = "Rearrangement type",
+                      labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Fusion Cat", "Fusion Swe"),
+                    guide = guide_legend(nrow = 2, title.position = "top")) +
+  scale_y_continuous(name = expression(Ratio[pi[intergenic]]),
+                     limits = c(0.70, 1.5)) +
+  scale_x_continuous(name = expression(Ratio[rec])) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+ratio_all_suppl <- 
+anc_df_distinct %>%
+  dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  dplyr::filter(class!="intergenic") %>%
+  ggplot(aes(ratio_rr, ratio_pi)) +
+  geom_point(aes(fill=type), shape=21, size=4, alpha=0.8) +
+  geom_smooth(size = PLOT_LINE, method = "lm", se=F, colour="black") +
+  stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm = 1000, small.p = T) +
+#  geom_text(data=lmod2_labels[lmod2_labels$class!="pn_ps",], aes(x=2.2, y=c(1.917, 1.85, 1.784, 1.718), label = paste0("R\U00B2 = ", round(res_lmod2, 3), ", p-value =", round(pval, 3)), colour=class), size=TXT_SIZE/2.8, show.legend = FALSE) +
+  scale_fill_manual(values = col_type,
+                      name = "Rearrangement type",
+                      labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Fusion Cat", "Fusion Swe")) +
+  scale_y_continuous(name = expression(Ratio[pi]),
+                     limits = c(0.70, 2)) +
+  scale_x_continuous(name = expression(Ratio[rec])) +
+  facet_wrap(~class) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+#ratio the rest
+ggsave(ratio_all_suppl, filename = "documentation/figures_ms/ratio_all_suppl.pdf", height = 6, width = 12)
+
+ggsave(ratio_all_suppl, filename = "documentation/figures_ms/ratio_all_suppl.png", height = 6, width = 12)
+
+
+
+#diff pi between pop in anc units 
+anc_units_diff_intergenic <- 
+anc_df %>%
+  dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  dplyr::filter(class=="intergenic")%>%
+  ggplot(aes(pop,anc_pi, group=anc_chr_unit)) +
+  geom_line(aes(colour=type, group=anc_chr_unit), size=PLOT_LINE) +
+  geom_point(aes(colour=type), size=2) +
+  scale_y_continuous(name = expression(pi[intergenic]),
+                     limits = c(0.0065, 0.013)) +
+  scale_colour_manual(values = col_type,
+                      name = "Rearrangement type",
+                      labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Fusion Cat", "Fusion Swe")) +
+  scale_x_discrete(expand = c(0.15,0.15), 
+                   name = "", 
+                   labels = c("Catalan", "Swedish")) +
+    theme(panel.background = element_blank(),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black", vjust = -3),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0, 
+          legend.position = c(0.7,0.85))
+
+
+
+
+#Make a legend for circos
+data.frame(type.x=unique(chain_anc$type.x), col_anc_vector)
+#in different order in ggplot
+col_type_all <- c("#526A83",
+              "#D9AF6B", 
+              "#AF6458",
+              "#625377", 
+              adjustcolor("#736F4C", offset = c(-0.1, -0.1, -0.1, 0)),
+              "#8C785D",
+              adjustcolor("#7C7C7C", offset = c(0.1, 0.1, 0.1, 0)),
+              "#855C75")
+circ_legend <- 
+get_legend(
+type_anc_col %>%
+  ggplot() +
+    geom_hline(aes(yintercept=chr_nr.x, colour=type.x), size=4, alpha=0.8) +
+ scale_colour_manual(values = col_type_all,
+                      name = "Rearrangement type",
+                      labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Ancestral fusions", "Fusion Cat", "Fusion Swe", "Identical", "Unknown direction", "Z-chomosomes")) +
+  theme(legend.key = element_blank(),
+        legend.text = element_text(size = TXT_SIZE, colour="black"),
+        legend.title = element_text(size = TXT_SIZE, colour="black"), 
+        legend.position = "bottom")
+)
+
+
+
+ggsave(plot=ggarrange(circ_legend, 
+                      ggarrange(ratio_intergenic+ theme(legend.position = "bottom"), anc_units_diff_intergenic + theme(legend.position = "none"), nrow=2, labels = c("b", "c"), align = "v"), 
+                      widths = c(1.7,1,2)),
+       filename = "documentation/figures_ms/diff_anc_circ_intergenic.pdf",
+       height = 10, width = 18)
+
+
+ggsave(plot=ggarrange(circ_legend, 
+                      ggarrange(ratio_intergenic+ theme(legend.position = "bottom"), anc_units_diff_intergenic  + theme(legend.position = "none"), nrow=2, labels = c("b", "c"), align = "v"), nrow = 2,
+                      heights = c(1,10)),
+       filename = "documentation/figures_ms/diff_anc_circ_staple_only_intergenic.pdf",
+       height = 18, width = 12)
+
+
+#ratio pnps
+
+anc_df_pnps %>%
+  ggplot(aes(ratio_rr, ratio_pn_ps)) +
+  geom_point(size=2) +
+  geom_smooth(method = "lm", se=F, colour="black") +
+  geom_text(data=lmod2_labels[lmod2_labels$class=="pn_ps",], aes(x=1, y=1.7, label = paste0("R\U00B2 = ", round(res_lmod2, 3), ", p-value =", round(pval, 3))), colour="black", size=TXT_SIZE/2.8, show.legend = FALSE) +
+  scale_y_continuous(name = expression(Ratio[pi[0]/pi[4]])) +
+  scale_x_continuous(name = expression(Ratio[rec])) +
+      theme(panel.background = element_blank(),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text = element_text(size = TXT_SIZE),
+          legend.title = element_text(size = TXT_SIZE),
+          legend.key=element_blank()) 
+
+
+ggsave("documentation/figures_ms/ratio_pn_ps_Suppl.pdf", height = 6, width = 10)
+ggsave("documentation/figures_ms/ratio_pn_ps.Suppl.png", height = 6, width = 10)
+
+
+```
+
+
+
+```{r ratio_diff_plots_ms}
+
+anc_df_2Mb_wind <- read.table("documentation/tables/anc_df_2Mb.table")
+rec_anc_mean <- read.table("documentation/tables/rec_anc_mean.table")
+
+anc_df <- 
+anc_df_2Mb_wind %>%
+  group_by(pop, anc_chr_unit, type, class) %>%
+  summarise(count_diffs=sum(count_diffs), count_comparisons=sum(count_comparisons)) %>%
+  dplyr::mutate(anc_pi=count_diffs/count_comparisons)
+
+
+anc_df <- left_join(anc_df,rec_anc_mean)
+
+anc_df <- 
+anc_df %>%
+  group_by(anc_chr_unit, class) %>%
+  dplyr::mutate(anc_pi, ratio_pi = anc_pi[pop == "LSSPA"]/anc_pi[pop == "LSSWE"])
+
+anc_df_distinct <- 
+  anc_df %>%
+  dplyr::distinct(anc_chr_unit, type, class, ratio_rr, ratio_pi)
+
+
+col_type <- c(adjustcolor("#526A83",offset = c(0.15,0.15, 0.15, 0)),
+              "#D9AF6B", 
+              adjustcolor("#625377",offset = c(0.3, 0.3, 0.3, 0)), 
+              adjustcolor("#736F4C",offset = c(0.05, 0.05, 0.05, 0)) )
+
+
+
+#ratio_intergenic <-            
+anc_df_distinct %>%
+  dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  dplyr::filter(class=="intergenic") %>%
+ggplot(aes(ratio_rr, ratio_pi)) +
+  geom_point(aes(fill=type),shape=21, size=5, alpha=0.8) +
+  geom_text(data=data.frame(cbind(rsquare=lmod2_intergenic$rsquare, permp=lmod2_intergenic$regression.results$`P-perm (1-tailed)`[1])),
+            aes(x=1.5, y=c(1.4), label = paste0("R\U00B2 = ", round(rsquare, 2), ", p-value = ", round(permp, 4))), size=TXT_SIZE/2.8, show.legend = FALSE) +
+  #stat_ma_eq(aes(label = paste(after_stat(rr.label), after_stat(p.value.label), sep = "*\", \"*")), method = "OLS", nperm= 1000, small.p = T, size=TXT_SIZE/2.8) +
+  stat_ma_eq(use_label("eq"), method = "OLS", nperm= 1000, size=TXT_SIZE/2.8, label.x=0.5) +
+  stat_ma_line(size = PLOT_LINE, method = "OLS", linetype="solid", se=F, col="black" ) +
+  scale_fill_manual(values = col_type,
+                    name = "Rearrangement type",
+                    labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Fusion Cat", "Fusion Swe")) +
+  scale_y_continuous(name = expression(pi[intergenic[Cat]]/pi[intergenic[Swe]]),
+                     limits = c(0.85, 1.45)) +
+  scale_x_continuous(name = expression("Rec. "*rate[Cat]/"Rec. "*rate[Swe])) +
+    theme(panel.background = element_blank(),
+          strip.background = element_rect(colour = "black", fill = "white"),
+          strip.text = element_text(size = TXT_SIZE, colour = "black"),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.title.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+#diff pi between pop in anc units 
+anc_units_diff_intergenic <- 
+anc_df %>%
+  dplyr::filter(!is.na(type), !type %in% c(0,"Z","fu_anc_sin", "hom", "unknown")) %>%
+  dplyr::filter(class=="intergenic")%>%
+  ggplot(aes(pop,anc_pi, group=anc_chr_unit)) +
+  geom_line(aes(colour=type, group=anc_chr_unit), alpha=0.8, size=PLOT_LINE) +
+  geom_point(aes(colour=type), size=2) +
+  scale_y_continuous(name = expression(pi[intergenic]),
+                     limits = c(0.0065, 0.013)) +
+  scale_colour_manual(values = col_type, guide = "none") +
+scale_x_discrete(expand = c(0.12,0.12), 
+                   name = "", 
+                   labels = c("Catalan", "Swedish")) +
+    theme(panel.background = element_blank(),
+          axis.line = element_line(size = LINE_SIZE),
+          axis.ticks = element_line(size = LINE_SIZE),
+          axis.title.y = element_text(size = TXT_SIZE, colour = "black"),
+          axis.text.x = element_text(size = TXT_SIZE, colour = "black", vjust = -3),
+          axis.text.y = element_text(size = TXT_SIZE, colour = "black"),
+          legend.key = element_blank(),
+          legend.text = element_text(size = TXT_SIZE, colour = "black"),
+          legend.title = element_text(size = TXT_SIZE, colour = "black"),
+          legend.text.align = 0)
+
+
+
+
+#Make a legend for circos
+data.frame(type.x=unique(chain_anc$type.x), col_anc_vector)
+#in different order in ggplot
+col_type_all <- c("#526A83",
+              "#D9AF6B", 
+              "#AF6458",
+              "#625377", 
+              adjustcolor("#736F4C", offset = c(-0.1, -0.1, -0.1, 0)),
+              "#8C785D",
+              adjustcolor("#7C7C7C", offset = c(0.1, 0.1, 0.1, 0)),
+              "#855C75")
+
+type_anc_col <- left_join(chain_anc, data.frame(type.x=unique(chain_anc$type.x), col_anc_vector))
+
+
+circ_legend <- 
+get_legend(
+type_anc_col %>%
+  ggplot() +
+    geom_hline(aes(yintercept=chr_nr.x, colour=type.x), size=4, alpha=0.8) +
+ scale_colour_manual(values = col_type_all,
+                      name = "Rearrangement type",
+                      labels = c("Fissions Cat / Fusions Swe", "Fission Cat", "Ancestral fusions", "Fusion Cat", "Fusion Swe", "Identical", "Unknown", "Z-chomosomes")) +
+  theme(legend.key = element_blank(),
+        legend.text = element_text(size = TXT_SIZE, colour="black"),
+        legend.title = element_text(size = TXT_SIZE, colour="black"), 
+        legend.position = "right")
+)
+
+
+
+ggsave(plot=ggarrange(circ_legend, 
+                      ggarrange(anc_units_diff_intergenic, ratio_intergenic, ncol=2, labels = c("b", "c"), align = "h", widths = c(1,1.5)), 
+                      nrow = 2,
+                      heights = c(1.8,1)),
+       filename = "documentation/figures_ms/diff_anc_circ_intergenic_221206.pdf",
+       height = 12, width = 12)
+
+
+ggsave(plot=ggarrange(circ_legend, 
+                      ggarrange(ratio_intergenic, anc_units_diff_intergenic + theme(plot.margin = unit(c(0.5, 20, 0.5, 30), "pt")), ncol=2, labels = c("b", "c"), align = "h", widths = c(1,1.5)), 
+                      nrow = 2,
+                      heights = c(0.3,1)),
+       filename = "documentation/figures_ms/diff_anc_circ_intergenic_221206.pdf",
+       height = 6, width = 14)
+
+
+```
+

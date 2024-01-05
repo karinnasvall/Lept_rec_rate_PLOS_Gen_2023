@@ -1,0 +1,584 @@
+---
+title: "rec_rate_mareymap"
+author: "KN"
+date: '2023-03-22'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+https://github.com/aursiber/MareyMap
+
+install.packages("MareyMap")
+install.packages(tcltk)
+install.packages(tkrplot)
+install.packages(tools)
+
+```{r setup2, echo=FALSE}
+library(MareyMap)
+library(tools)
+library(tkrplot)
+library(tcltk)
+
+library(ggplot2)
+library(ggpubr)
+library(viridis)
+library("tidyr")
+library(plyr)
+library(dplyr)
+library(shades)
+
+
+
+```
+
+```{bash MareyMap_input_prep}
+
+#input to MareyMap "set" "map" "mkr" "phys" "gen"
+
+awk '{print $5="ls_swe", $3, $1, $4, $2}'  LM_swe_4fam/map_thin_swe > rec_rate_data/input_marey_map_temp_swe.txt
+awk '{print $5="ls_cat", $8, $1, $4, $2}'  LM_cat_4fam/map_thin_cat > rec_rate_data/input_marey_map_temp_cat.txt
+
+
+```
+
+```{r MareyMap_data}
+
+marey_map <- read.table("rec_rate_data/input_marey_map_temp_swe.txt", header = T)
+colnames(marey_map) <- c("set", "map", "mkr", "phys", "gen")
+head(marey_map)
+write.table(marey_map,file="rec_rate_data/input_marey_map_swe.txt")
+
+marey_map_cat <- read.table("rec_rate_data/input_marey_map_temp_cat.txt", header = T)
+colnames(marey_map_cat) <- c("set", "map", "mkr", "phys", "gen")
+head(marey_map_cat)
+write.table(marey_map_cat,file="rec_rate_data/input_marey_map_cat.txt")
+
+marey_map <- rbind(marey_map, marey_map_cat)
+
+coefficients(lm(gen ~ phys, data = marey_map))
+
+ggplot(marey_map, aes(phys, gen)) +
+  geom_point(aes(colour=set)) +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+
+#total number of markers
+length(marey_map$set)
+#number of marker per chr
+count(marey_map$map)
+
+#remove single markers at ends of map extending the map more than 10cM
+#check
+marey_map[as.numeric(row.names(marey_map[diff(marey_map$gen)>10,])),]
+#swedish are only gaps within maps
+#cat
+# 3025 ls_cat  29 6274   399079  0.000
+# 3054 ls_cat  50 9014   108886  0.000
+# 3389 ls_cat  40 7971  7480042 35.128 #remove the next 2 rows
+# 3460 ls_cat  45 8478   500269  1.471
+# 3593 ls_cat  46 8713  6566962 38.182 #remove the next row
+# 
+# 3777 ls_cat  18 4216   258514  0.000
+# 3674 ls_cat  48 8828   757184  0.000
+
+marey_map <- marey_map[-c(3025, 3053,3054, 3390, 3391, 3460, 3594,3777, 3673, 3674),]
+
+ggplot(marey_map, aes(phys, gen)) +
+  geom_point(aes(colour=set)) +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+map_min <- aggregate(gen~map + set, min, data = marey_map)
+colnames(map_min) <- c("map", "set", "gen_min")
+marey_map <- join(marey_map, map_min)
+
+marey_map$gen_new <- marey_map$gen-marey_map$gen_min
+
+ggplot(marey_map[marey_map$set=="ls_swe",], aes(phys, gen_new)) +
+  geom_point(aes(colour=set)) +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+ggplot(marey_map[marey_map$set=="ls_cat",], aes(phys, gen_new)) +
+  geom_point(aes(colour=set)) +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+
+marey_map$gen <- marey_map$gen_new
+
+write.table(marey_map[,c(1:5)],file="rec_rate_data/input_marey_map.txt")
+marey_map <- read.table(file="rec_rate_data/input_marey_map.txt", header = T)
+
+#create list with span for marey map loess method (span = % of markers used for regression) want consistent nr of markers
+mkr_nr <- aggregate(mkr~map + set, length, data=marey_map)
+mkr_nr$span_10 <- 10/mkr_nr$mkr
+mkr_nr$span_5 <- 5/mkr_nr$mkr
+
+write.table(mkr_nr[mkr_nr$set=="ls_cat",],file="rec_rate_data/marker_nr_span_cat.txt")
+write.table(mkr_nr[mkr_nr$set=="ls_swe",],file="rec_rate_data/marker_nr_span_swe.txt")
+
+
+
+```
+
+```{r est_rec_rate}
+
+startMareyMapGUI()
+
+#go through all maps and check markers causing negative rec rate, check teh box valid, MereyMap then recalculates regression directly without the invalid marker. Non valid markers are save as vld=FALSE in output. 
+
+
+```
+
+```{r filter_data}
+
+rec_rate_prel <- read.table("rec_rate_data/output_marey_map_220706_v2.txt", header = T, na.strings = "NA")
+
+length(rec_rate_prel[rec_rate_prel$loess < 0 & !is.na(rec_rate_prel$loess), 1]) 
+rec_rate_prel[rec_rate_prel$loess < 0 & !is.na(rec_rate_prel$loess), "vld"]=FALSE
+rec_rate_prel[rec_rate_prel$loess < 0 & !is.na(rec_rate_prel$loess), "loess"]=NA
+rec_rate_prel[rec_rate_prel$vld==FALSE & !is.na(rec_rate_prel$loess), "loess"]=NA
+
+summary(rec_rate_prel)
+
+write.table(rec_rate_prel, file = "rec_rate_data/output_marey_map_filt_220706.txt")
+
+
+
+ggplot(rec_rate_prel[rec_rate_prel$set=="ls_swe",], aes(phys, loess)) +
+  geom_point() +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+ggplot(rec_rate_prel[rec_rate_prel$set=="ls_cat",], aes(phys, loess)) +
+  geom_point() +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+plot(rec_rate_prel[rec_rate_prel$set=="ls_cat",]$loess)
+plot(rec_rate_prel[rec_rate_prel$set=="ls_swe",]$loess)
+
+rec_r_temp <- aggregate(phys~map+set, max, data = rec_rate_prel)
+colnames(rec_r_temp) <- c("map", "set", "chr_max")
+rec_rate_prel <- join(rec_rate_prel,rec_r_temp )
+
+ggplot(rec_rate_prel, aes(phys/chr_max, loess)) +
+  geom_point(colour="light grey") +
+  geom_smooth(aes(colour=as.factor(map)), method="loess", se = F) +
+  facet_wrap(~set) +
+  scale_color_grey() +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+ggplot(rec_rate_prel[rec_rate_prel$map<14,], aes(phys/chr_max, loess)) +
+  geom_point(colour="light grey") +
+  geom_smooth(aes(colour=as.factor(map)), method="loess", se = F) +
+  facet_wrap(~set) +
+  scale_color_grey() +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+
+
+aggregate(loess~set, mean, data = rec_rate_prel)
+aggregate(loess~set, median, data = rec_rate_prel)
+boxplot(loess~set, mean, data = rec_rate_prel)
+
+
+
+```
+
+```{r filter_data_2}
+
+#check window and spline methods
+rec_rate_prel <- read.table("rec_rate_data/output_marey_map_filt_220706.txt", header = T, na.strings = "NA")
+
+summary(rec_rate_prel)
+
+summary(rec_rate_prel[rec_rate_prel$set=="ls_cat",])
+summary(rec_rate_prel[rec_rate_prel$set=="ls_swe",])
+
+
+ggplot(rec_rate_prel[rec_rate_prel$set=="ls_swe",], aes(phys, slidingwindow)) +
+  geom_point() +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+ggplot(rec_rate_prel[rec_rate_prel$set=="ls_cat",], aes(phys, slidingwindow)) +
+  geom_point() +
+  facet_wrap(~map, scales="free") +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+plot(rec_rate_prel[rec_rate_prel$set=="ls_cat",]$loess)
+plot(rec_rate_prel[rec_rate_prel$set=="ls_swe",]$loess)
+
+rec_r_temp <- aggregate(phys~map+set, max, data = rec_rate_prel)
+colnames(rec_r_temp) <- c("map", "set", "chr_max")
+rec_rate_prel <- join(rec_rate_prel,rec_r_temp )
+
+ggplot(rec_rate_prel, aes(phys/chr_max, loess)) +
+  geom_point(colour="light grey") +
+  geom_smooth(aes(colour=as.factor(map)), method="loess", se = F) +
+  facet_wrap(~set) +
+  scale_color_grey() +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+ggplot(rec_rate_prel[rec_rate_prel$map<14,], aes(phys/chr_max, loess)) +
+  geom_point(colour="light grey") +
+  geom_smooth(aes(colour=as.factor(map)), method="loess", se = F) +
+  facet_wrap(~set) +
+  scale_color_grey() +
+  ylab("cM") +
+  xlab("Mb") +
+  theme(panel.background = element_blank(),
+        axis.line = element_line(size = 1),
+        axis.text = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.text = element_text(size = 10))
+
+
+
+aggregate(loess~set, mean, data = rec_rate_prel)
+aggregate(loess~set, median, data = rec_rate_prel)
+boxplot(spline~set, mean, data = rec_rate_prel)
+
+ggplot(rec_rate_prel) +
+  geom_boxplot(aes(as.factor(map), spline)) +
+  facet_wrap(~set) +
+  scale_y_continuous(limits = c(0,80))
+
+ggplot(rec_rate_prel) +
+  geom_boxplot(aes(as.factor(map), slidingwindow)) +
+  facet_wrap(~set) +
+  scale_y_continuous(limits = c(0,80))
+
+ggplot(rec_rate_filt) +
+  geom_boxplot(aes(as.factor(map), loess)) +
+  facet_wrap(~set) +
+  scale_y_continuous(limits = c(0,80))
+
+cor.test(aggregate(spline~map, mean, data = rec_rate_prel[rec_rate_prel$set=="ls_cat",]),aggregate(phys~map, max, data = rec_rate_prel[rec_rate_prel$set=="ls_cat",]))
+
+```
+
+
+```{r data, echo=FALSE}
+
+#input is the filtered output from MareyMapGUI
+rec_rate_filt <- read.table(file = "rec_rate_data/output_marey_map_filt_220706.txt", header = T, na.strings = "NA")
+
+#remove non valid markers
+rec_rate_filt <- rec_rate_filt[rec_rate_filt$vld==TRUE,]
+
+#length(rec_rate[rec_rate$loess < 0 & !is.na(rec_rate$loess), 1]) #114
+#rec_rate[rec_rate$loess < 0 & !is.na(rec_rate$loess), "loess"]=NA
+#rec_rate$loess <- replace(rec_rate$loess, which(rec_rate$loess < 0), NA)
+
+#rec_rate_wd1 <- read.table("../result/marey_output_2mb_wd_corr.txt", header = T, na.strings = "NA")
+
+#rec_rate_wd2 <- read.table("../result/marey_output_wd_4mkr.txt", header = T, na.strings = "NA")
+
+#2mb window with at least 2 mkrs
+#rec_rate$wind_2mb <- rec_rate_wd1$slidingwindow
+
+#2mb window with at least 4 mkrs
+#rec_rate$wind_2mb_4mkr <- rec_rate_wd2$slidingwindow
+
+#rec_rate$vld <- rec_rate_wd1$vld
+
+# the factors are not strings so gsub does not work on the whole df, gsub("chr", "", rec_rate)
+
+chr_length <- read.table("rec_rate_data/chr_length_swe_HiC.txt")
+chr_length$map <- seq(1,29,1)
+chr_length$set <- "ls_swe"
+colnames(chr_length) <- c("sc", "chr_length", "map", "set")
+
+chr_length_cat <- read.table("rec_rate_data/chr_length_cat_HiC.txt")
+chr_length_cat$map <- seq(1,52,1)
+chr_length_cat$set <- "ls_cat"
+colnames(chr_length_cat) <- c("sc", "chr_length", "map", "set")
+
+chr_length_cat[chr_length_cat$map==5,"chr_length"]=chr_length_cat[chr_length_cat$map==5,"chr_length"]-max( rec_rate_filt[rec_rate_filt$map==53,"phys"])
+
+#add the second part of sc5
+chr_length_cat[53,]=c("HiC_scaffold_5", max( rec_rate_filt[rec_rate_filt$map==53,"phys"]), 53, "ls_cat")
+
+#add the length of the previuos chromosome so get the genomic position (for whole genome plot), use cumsum to get the position and then subtract with marker position later
+#exclude the W  LR999940.1
+#chr_length <- chr_length[chr_length$map!= "LR999940.1",]
+chr_length$chr_start <- cumsum(append(unique(chr_length$chr_length),0,0)[1:29])
+chr_length_cat$chr_start <- cumsum(append(unique(chr_length_cat$chr_length),0,0)[1:53])
+
+
+chr_length <- rbind(chr_length, chr_length_cat)
+
+rec_rate <- join(rec_rate_filt, chr_length)
+
+#adjust phys 
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==5, "phys"]=rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==5, "phys"]-max( rec_rate_filt[rec_rate_filt$map==53,"phys"])
+
+rec_rate$genome_pos <- rec_rate$phys+rec_rate$chr_start
+
+rec_rate$chr_length <- as.numeric(rec_rate$chr_length)
+#the relative position on the chromosome for each marker, in percent
+rec_rate$rel_pos <- (rec_rate$phys/rec_rate$chr_length)*100
+
+#df$c4 <- cut(df$c2, c(-Inf,4,9,Inf), c("low", "medium", "high"))
+rec_rate$pos_group <- cut(sqrt((rec_rate$rel_pos-50)^2), c(-Inf,10,20,30,40,Inf), c(1,2,3,4,5))
+
+
+
+#column for chromosome type
+rec_rate$chr_type <- "Autosome"
+rec_rate[rec_rate$map==1,]$chr_type <- "Z"
+rec_rate[rec_rate$set=="ls_swe" & rec_rate$map==6,]$chr_type <- "Z"
+rec_rate[rec_rate$set=="ls_swe" & rec_rate$map==18,]$chr_type <- "Z"
+
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==3,]$chr_type <- "Z"
+rec_rate[rec_rate$set=="ls_cat" & rec_rate$map==4,]$chr_type <- "Z"
+
+
+summary(rec_rate)
+
+
+
+#mean rec_rate according to regression
+rec_rate_mean <- cbind(unique(rec_rate[c("map", "set")]),
+                       aggregate(loess~map+set, mean, data = rec_rate)$loess,
+                       aggregate(loess~map+set, sd, data = rec_rate)$loess,
+                       aggregate(gen~map+set, max, data = rec_rate)$gen,
+                       aggregate(loess~map+set, median, data = rec_rate)$loess)
+
+colnames(rec_rate_mean) <- c("map", "set", "loess","loess_sd", "map_length", "median")
+
+
+
+rec_rate_mean <- join(rec_rate_mean, chr_length)
+rec_rate_mean$chr_length <- as.numeric(rec_rate_mean$chr_length)/1000000
+rec_rate_mean$rate <-rec_rate_mean$map_length/rec_rate_mean$chr_length
+rec_rate_mean$markers <- (rec_rate %>% count(set, map))$n
+rec_rate_mean$marker_density <- rec_rate_mean$markers/rec_rate_mean$chr_length
+rec_rate_mean$chr_type <- unique(rec_rate[,c("set", "map", "chr_type")])$chr_type
+
+
+summary(rec_rate_mean)
+
+rec_rate_mean
+
+
+
+```
+
+
+```{r plots_ms_marey}
+
+
+#rec_rate <- read.table("../tables/rec_rate_windows.table")
+
+#add a column with new names on chr
+
+#plot marey maps, cat
+marey_cat <- ggplot(rec_rate[rec_rate$set=="ls_cat",], aes(phys/1000000, gen)) +
+  geom_point(size=0.6, colour="black") +
+  facet_wrap(~map) +
+  scale_y_continuous(name = "Genetic distance (cM)", 
+                     limits = c(0,90)) +
+  scale_x_continuous(name = "Physical position (Mb)") +
+  labs(title = "Marey map (Catalan)") +
+  # ggpubr::stat_cor(method = "pearson",
+  # cor.coef.name = "R",
+  # label.sep = ",",
+  # r.accuracy = 0.01,
+  # p.accuracy = 0.0001,
+  # label.x = 0,
+  # label.y = 70,
+  # geom = "text",
+  # size = 2,
+  # show.legend = NA) +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+#plot marey maps, swe
+marey_swe <- ggplot(rec_rate[rec_rate$set=="ls_swe",], aes(phys/1000000, gen)) +
+  geom_point(size=0.6, colour="black") +
+  facet_wrap(~map, ncol = 8) +
+  scale_y_continuous(name = "Genetic distance (cM)", 
+                     limits = c(0,90)) +
+  scale_x_continuous(name = "Physical position (Mb)") +
+  labs(title = "Marey map (Swedish)") +
+  # ggpubr::stat_cor(method = "pearson",
+  # cor.coef.name = "R",
+  # label.sep = ",",
+  # r.accuracy = 0.01,
+  # p.accuracy = 0.0001,
+  # label.x = 0,
+  # label.y = 70,
+  # geom = "text",
+  # size = 2,
+  # show.legend = NA) +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+
+ggarrange(marey_cat, marey_swe, ncol = 1, nrow = 2, heights = c(1.6,1))
+
+ggsave("figures/marey_maps.pdf", device = "pdf", height = 10, width = 10)
+ggsave("figures/marey_maps.png", device = "png", height = 10, width = 10)
+
+
+```
+
+```{r plots_ms_rec_rate}
+rec_rate <- read.table("tables/rec_rate_220706.table", header = T)
+rec_rate_mean <- read.table("tables/summary_per_chromosome_220706.table", header = T)
+
+pop.labs <- c("Catalan", "Swedish")
+names(pop.labs) <- c("ls_cat", "ls_swe")
+
+rr_cat <- ggplot(rec_rate[rec_rate$set=="ls_cat",], aes(phys/1000000, loess)) +
+  geom_point(size = 0.4) +
+  geom_line(size = 0.2) +
+  facet_wrap(~map) +
+  scale_y_continuous(limits = c(0,40)) +
+  labs(title = "Recombination rate (Catalan)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+rr_swe <- ggplot(rec_rate[rec_rate$set=="ls_swe",], aes(phys/1000000, loess)) +
+  geom_point(size = 0.4) +
+  geom_line(size = 0.2) +
+  facet_wrap(~map, ncol = 8) +
+  scale_y_continuous(limits = c(0,40)) +
+  labs(title = "Recombination rate (Swedish)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+ggarrange(rr_cat, rr_swe, ncol = 1, nrow = 2, heights = c(1.4,1))
+
+ggsave("figures/rec_rate_along_chr.pdf", device = "pdf", height =10, width = 10)
+ggsave("figures/rec_rate_along_chr.png", device = "png", height =10, width = 10)
+
+rr_cat <- ggplot(rec_rate[rec_rate$set=="ls_cat",], aes(phys/1000000, loess)) +
+  geom_point(size = 0.4) +
+  geom_line(size = 0.2) +
+  facet_wrap(~map, scales = "free") +
+  labs(title = "Recombination rate (Catalan)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+rr_swe <- ggplot(rec_rate[rec_rate$set=="ls_swe",], aes(phys/1000000, loess)) +
+  geom_point(size = 0.4) +
+  geom_line(size = 0.2) +
+  facet_wrap(~map, scales = "free", ncol = 8) +
+  labs(title = "Recombination rate (Swedish)") +
+  ylab("Recombination rate (cM/Mb)") +
+  xlab("Physical position (Mb)") +
+  theme_classic() +
+  theme(strip.background = element_rect(size = 0.4),
+        axis.line = element_line(size=0.2))
+
+ggarrange(rr_cat, rr_swe, ncol = 1, nrow = 2, heights = c(1.4,1))
+
+ggsave("figures/rec_rate_along_chr_free.pdf", device = "pdf", height =10, width = 10)
+ggsave("figures/rec_rate_along_chr_free.png", device = "png", height =10, width = 10)
+
+means <- aggregate(loess~set, mean, data = rec_rate)
+means$sd <- aggregate(loess~set, sd, data = rec_rate)$loess
+means$quantile <- as.numeric(as.matrix(aggregate(loess~set, quantile, data = rec_rate))[,5])
+
+
+```

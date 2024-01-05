@@ -1,0 +1,8 @@
+chr       chr_start	chr_end type    ref
+chr_5	7316288	7425984	fu_spa	SPA
+chr_51	5204110	5373554	fu_spa	SPA
+chr_2	14215527	14263805	fu_anc_sin	SPA
+chr_14	6388689	6410190	fu_anc_sin	SPA
+chr_21	8509954	8620954	fu_anc_sin	SPA
+chr_25	7612726	7661594	fu_anc_sin	SPA
+chr_36	5378637	5412761	fu_anc_sin	SPA
