@@ -141,7 +141,7 @@ rec_rate <- rec_rate[order(rec_rate$set, rec_rate$chr_nr, rec_rate$phys_assembly
 write.table(rec_rate, "../../01_link_map_part2_r/tables/rec_rate_221027_update.table")
 write.table(rec_rate, "documentation//tables/rec_rate_221027_update.table")
 
-rec_rate <- read.table( "../01_link_map_part2_r/tables/rec_rate_221027_update.table", header = T)
+rec_rate <- read.table( "tables/rec_rate_221027_update.table", header = T)
 
 #combine with dnds
 #add column with same pop name
@@ -153,11 +153,17 @@ rec_rate$chrom <- rec_rate$sc
 rec_rate_rr <- 
 rec_rate %>%
   group_by(set, chrom) %>%
-  dplyr::mutate(gen_dist= gen_assembly - lag(gen_assembly), phys_dist=phys_assembly - lag(phys_assembly)) %>%
-  dplyr::mutate(rrate=gen_dist/phys_dist*1000000, weight=phys_dist/chr_length_assembly) %>%
+  dplyr::mutate(gen_dist=round(gen_assembly - lag(gen_assembly), digits = 2), phys_dist=phys_assembly - lag(phys_assembly)) %>%
+  dplyr::mutate(rrate=round(gen_dist/phys_dist*1000000, digits = 3), weight=phys_dist/chr_length_assembly) %>%
   group_by(set, map) %>%
   dplyr::mutate(w_mean_rrate=weighted.mean(x = rrate, w = weight, na.rm = T), ) %>%
   ungroup()
+
+rec_rate_table <- 
+rec_rate_rr %>%
+  select(pop, chrom, phys_assembly, gen_assembly, gen_dist, phys_dist, rrate)
+
+write.table(rec_rate_table, "tables/rec_rate_final.table", row.names = F)
 
 rec_rate_rr %>%
 ggplot(aes(chr_length_assembly, w_mean_rrate)) +
